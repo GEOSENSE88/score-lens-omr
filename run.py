@@ -189,17 +189,20 @@ def main() -> int:
             saver(alt)
             return alt
 
-    # CSV
+    # CSV (문항별 학생답 1~45 포함 — 통합 정오표에서 학생 답안 표시용)
     def _write_csv(path: Path) -> None:
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
             w.writerow(["페이지", "학교(학원)번호", "반", "번호", "성명", "선택과목",
-                        "원점수", "만점", "맞은개수", "틀린문항", "미마킹", "중복마킹"])
+                        "원점수", "만점", "맞은개수", "틀린문항", "미마킹", "중복마킹"]
+                       + [str(q) for q in range(1, 46)])
             for r in rows:
+                pq = r.get("per_q", {})
                 w.writerow([r["page"], r.get("school", ""), r.get("ban", ""), r.get("beon", ""),
                             r.get("name", ""), r["elective"] or "?", r["score"], r["max_score"],
                             r["correct_count"], " ".join(map(str, r["wrong"])),
-                            " ".join(map(str, r["blank"])), " ".join(map(str, r["dup"]))])
+                            " ".join(map(str, r["blank"])), " ".join(map(str, r["dup"]))]
+                           + [pq.get(q, {}).get("student", "") for q in range(1, 46)])
 
     csv_path = _save(args.out / f"{args.pdf.stem}_점수표.csv", _write_csv)
     xlsx_path = _save(args.out / f"{args.pdf.stem}_점수표.xlsx",

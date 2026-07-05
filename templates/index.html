@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>산남고 OMR 채점실</title>
+<title>OMR Lens — 모의고사 스캔·채점</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%230F4C75'/%3E%3Ccircle cx='20' cy='20' r='11' fill='none' stroke='%23BBE1FA' stroke-width='3.2'/%3E%3Ccircle cx='20' cy='20' r='4.4' fill='%23BBE1FA'/%3E%3C/svg%3E">
 <style>
   :root{
     --bg:#F8F9F6; --surface:#FFFFFF; --ink:#1B262C; --ink-soft:#4A5A66;
@@ -31,11 +32,11 @@
   header .wrap{padding-bottom:0}
   .brand{display:flex;align-items:center;gap:14px}
   .brand-mark{
-    width:46px;height:46px;border-radius:12px;background:var(--sky);
-    display:grid;place-items:center;font-weight:800;font-size:15px;color:var(--primary);
-    letter-spacing:-.5px; box-shadow:inset 0 0 0 2px rgba(15,76,117,.15);
+    width:48px;height:48px;flex-shrink:0;filter:drop-shadow(0 2px 6px rgba(0,0,0,.25));
   }
+  .brand-mark svg{display:block;width:100%;height:100%}
   .brand h1{font-size:22px;font-weight:800;letter-spacing:-.3px}
+  .brand h1 .en{color:var(--sky)}
   .brand p{font-size:13.5px;color:var(--sky);margin-top:2px}
   .share-badge{
     margin-left:auto;background:rgba(255,255,255,.10);border:1px solid rgba(187,225,250,.35);
@@ -244,10 +245,17 @@
 <header>
   <div class="wrap">
     <div class="brand">
-      <div class="brand-mark">OMR</div>
+      <div class="brand-mark">
+        <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OMR Lens">
+          <rect width="48" height="48" rx="12" fill="#BBE1FA"/>
+          <circle cx="24" cy="24" r="13" fill="none" stroke="#0F4C75" stroke-width="4"/>
+          <circle cx="24" cy="24" r="5.6" fill="#0F4C75"/>
+          <path d="M34 34 L40 40" stroke="#0F4C75" stroke-width="4" stroke-linecap="round"/>
+        </svg>
+      </div>
       <div>
-        <h1>산남고 OMR 채점실</h1>
-        <p>답안지 PDF를 올리면 판독·채점 후 대교협·UNIV 양식과 정오표를 한 번에 만듭니다</p>
+        <h1>OMR&nbsp;<span class="en">Lens</span></h1>
+        <p>모의고사 OMR 답안지를 스캔하면 자동 채점 → 대교협·UNIV 성적표와 정오표까지</p>
       </div>
       {% if share %}
       <div class="share-badge" title="같은 학교망의 동료에게 이 주소와 코드를 알려주세요">
@@ -348,7 +356,7 @@
   </section>
 
   <footer>
-    <b>산남고등학교 OMR 자동 채점 시스템</b> · score_lens<br>
+    <b>OMR Lens</b> · 모의고사 OMR 스캔·채점<br>
     표준점수·백분위·등급은 EBSi 예상 등급컷 기반 <b>추정치</b>입니다 (통합성적표의 '예상등급컷' 시트에 근거 수록).<br>
     공식 성적표를 대체하지 않으며, 고3 국어·수학은 EBSi 원점수 컷 비공개로 예상치가 제공되지 않습니다.
   </footer>

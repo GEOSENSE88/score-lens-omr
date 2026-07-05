@@ -300,30 +300,46 @@ def _write_univ(ws, students: list[dict], grade: int):
 
 # ── 3) 과목별 정오표 ──────────────────────────────────────────────
 def _write_marksheet(ws, subject: str, rows: list[dict], nq: int):
+    NB = 6                                  # 문항 앞 기본 컬럼 수
+    # 1행: 범례 (셀 숫자 = 학생이 마킹한 답안)
+    ws.cell(1, 1, "숫자 = 학생 답안 ·  초록 = 정답  빨강 = 오답  "
+                  "· = 미마킹  중 = 중복마킹  회색 = 정답키 없음  "
+                  "(오답 셀은 「학생답→정답」)").font = Font(bold=True, color="1F4E79")
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NB + nq)
+
     headers = ["반", "번호", "이름", "원점수", "만점", "틀린문항"] + [str(q) for q in range(1, nq + 1)]
     for i, h in enumerate(headers, 1):
-        c = ws.cell(1, i, h)
+        c = ws.cell(2, i, h)
         c.font = Font(bold=True, color="FFFFFF"); c.fill = HEAD_FILL; c.alignment = CENTER
-    for ri, row in enumerate(rows, 2):
+    for ri, row in enumerate(rows, 3):
         jeongo = row.get("정오", {})
-        wrong = [q for q, d in jeongo.items() if not d.get("ok") and d.get("답") not in (0, -1, None)]
+        wrong = [q for q, d in jeongo.items() if not d.get("ok") and d.get("답") not in (0, -1, None, "")]
         base = [row.get("반", ""), row.get("번호", ""), row.get("이름", ""),
                 _num(row.get("원점수")), _num(row.get("만점")), " ".join(map(str, sorted(wrong)))]
         for ci, v in enumerate(base, 1):
             ws.cell(ri, ci, v).alignment = CENTER
         for q in range(1, nq + 1):
             d = jeongo.get(q) or jeongo.get(str(q))
-            cell = ws.cell(ri, 6 + q)
+            cell = ws.cell(ri, NB + q)
             cell.alignment = CENTER
             if not d:
                 cell.fill = GRAY
                 continue
-            stu = d.get("답")
-            cell.value = {0: "·", -1: "중"}.get(stu, stu)
-            cell.fill = GREEN if d.get("ok") else RED
-    ws.freeze_panes = "G2"
-    for c in range(1, 7 + nq):
-        ws.column_dimensions[gc(c)].width = 3.6 if c > 6 else (9 if c == 3 else 6)
+            stu, ans, ok = d.get("답"), d.get("정답"), d.get("ok")
+            if stu in (0, "", None):
+                cell.value = "·"            # 미마킹
+            elif stu == -1:
+                cell.value = "중"           # 중복마킹
+            elif ok:
+                cell.value = stu            # 정답: 학생답만
+            else:
+                # 오답: 학생답→정답 (정답을 알면 함께 표기)
+                cell.value = f"{stu}→{ans}" if ans not in (None, "") else stu
+            cell.fill = GREEN if ok else RED
+    ws.freeze_panes = ws.cell(3, NB + 1).coordinate
+    ws.row_dimensions[1].height = 15
+    for c in range(1, NB + nq + 1):
+        ws.column_dimensions[gc(c)].width = 5.4 if c > NB else (9 if c == 3 else 6)
 
 
 def _write_cuts_sheet(ws, cuts_by_subject: dict):

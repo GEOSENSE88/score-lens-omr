@@ -124,11 +124,14 @@ def write_outputs(rows, out, stem):
     def _csv(path):
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
-            w.writerow(["페이지", "학교번호", "반", "번호", "성명", "선택과목", "원점수", "만점", "틀린문항"])
+            w.writerow(["페이지", "학교번호", "반", "번호", "성명", "선택과목", "원점수", "만점", "틀린문항"]
+                       + [str(q) for q in range(1, 31)])
             for row in rows:
+                ans = row.get("answers", {})
                 w.writerow([row["page"], row["school"], row["ban"], row["beon"], row["name"],
                             row["elective"] or "?", row["score"], row["max"],
-                            " ".join(map(str, row["wrong"]))])
+                            " ".join(map(str, row["wrong"]))]
+                           + [ans.get(q, "") for q in range(1, 31)])
     csvp = _save(f"{stem}_수학_점수표", ".csv", _csv)
     return xlsx, csvp
 

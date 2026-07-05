@@ -6,18 +6,28 @@
 전 과목 채점이 끝나면 consolidate 로 '통합성적표.xlsx'(대교협 + UNIV + 정오표)를
 자동 생성해 다운로드 최상단에 노출한다.
 
-    python web_app.py            # http://127.0.0.1:5050
+    python web_app.py            # 교내망/PC 모드 (localhost 무인증)
+
+환경변수 (서버 배포 시):
+    OMR_BEHIND_PROXY=1   nginx 등 리버스 프록시 뒤 — 실제 클라이언트 IP 사용,
+                         localhost 무인증 면제 해제(전원 접속코드 필요), 보안쿠키
+    OMR_ACCESS_CODE=...  접속 코드 지정(미지정 시 access_code.txt 자동생성)
+    OMR_DATA_TTL_MIN=60  업로드·결과 파일 보존 시간(분). 지나면 자동 삭제(0=끄기)
+    OMR_HOST / OMR_PORT  바인딩 (기본 0.0.0.0:5050)
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -36,12 +46,28 @@ UPLOAD_ROOT = ROOT / "uploads"
 WEB_OUTPUT_ROOT = ROOT / "output" / "web_runs"
 ALLOWED_EXTENSIONS = {".pdf", ".csv"}
 
+# ── 배포 설정 (환경변수) ──────────────────────────────────────────
+BEHIND_PROXY = os.environ.get("OMR_BEHIND_PROXY", "") == "1"
+DATA_TTL_MIN = int(os.environ.get("OMR_DATA_TTL_MIN", "0") or "0")
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=BEHIND_PROXY,     # HTTPS 전용 쿠키 (프록시 뒤=TLS 종단)
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 8,
+)
+if BEHIND_PROXY:
+    # nginx 가 넘기는 X-Forwarded-* 를 신뢰 → request.remote_addr 가 실제 클라이언트 IP.
+    # (없으면 모든 요청이 127.0.0.1 로 보여 localhost 무인증 게이트가 통째로 우회된다.)
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 JOBS: dict[str, dict] = {}
 
 
-# ── 교내망 공유: 세션 비밀키 + 접속 코드 ──────────────────────────
+# ── 인증: 세션 비밀키 + 접속 코드 ─────────────────────────────────
 def _persist_secret(path: Path, gen) -> str:
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
@@ -51,13 +77,26 @@ def _persist_secret(path: Path, gen) -> str:
 
 
 app.secret_key = _persist_secret(ROOT / ".flask_secret", lambda: secrets.token_hex(32))
-# 동료 접속용 코드 — access_code.txt 를 수정하면 바뀐다 (본인 PC는 코드 불필요)
-ACCESS_CODE = _persist_secret(ROOT / "access_code.txt",
-                              lambda: f"{secrets.randbelow(900000) + 100000}")
+# 접속 코드: 환경변수 우선, 없으면 access_code.txt (자동 6자리). 프록시 뒤면 8자리 권장.
+ACCESS_CODE = os.environ.get("OMR_ACCESS_CODE", "").strip() or _persist_secret(
+    ROOT / "access_code.txt",
+    lambda: f"{secrets.randbelow(90000000) + 10000000}" if BEHIND_PROXY
+    else f"{secrets.randbelow(900000) + 100000}")
+
+# 로그인 무차별 대입 방어 (IP별 실패 카운트 + 잠금)
+_LOGIN_FAILS: dict[str, list] = {}          # ip -> [fail_count, locked_until_ts]
+LOCK_THRESHOLD, LOCK_SECONDS = 5, 300
+
+
+def _client_ip(req) -> str:
+    return req.remote_addr or "?"
 
 
 def _is_local(req) -> bool:
-    return req.remote_addr in ("127.0.0.1", "::1")
+    # 프록시 뒤(서버 모드)에서는 localhost 무인증 면제를 끈다 — 전원 접속코드 필요.
+    if BEHIND_PROXY:
+        return False
+    return _client_ip(req) in ("127.0.0.1", "::1")
 
 
 def lan_ip() -> str:
@@ -74,7 +113,7 @@ def lan_ip() -> str:
 
 @app.before_request
 def _gate():
-    """본인 PC(localhost)는 무조건 통과, 교내망 접속은 접속 코드 세션 필요."""
+    """PC 모드: localhost 무인증. 서버 모드: 전원 접속 코드 세션 필요."""
     if _is_local(request) or session.get("auth") or request.endpoint in ("login", "static"):
         return None
     return redirect(url_for("login", next=request.path))
@@ -83,13 +122,43 @@ def _gate():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
+    ip = _client_ip(request)
     if request.method == "POST":
-        if request.form.get("code", "").strip() == ACCESS_CODE:
+        cnt, until = _LOGIN_FAILS.get(ip, [0, 0])
+        if until and time.time() < until:
+            wait = int(until - time.time())
+            return render_template("login.html",
+                                   error=f"시도가 많아 잠겼습니다. {wait}초 후 다시 시도하세요."), 429
+        # 타이밍 공격 방지: 상수시간 비교
+        if hmac.compare_digest(request.form.get("code", "").strip(), ACCESS_CODE):
+            _LOGIN_FAILS.pop(ip, None)
             session["auth"] = True
             session.permanent = True
-            return redirect(request.args.get("next") or url_for("index"))
+            nxt = request.args.get("next") or ""
+            # open-redirect 방지: 내부 경로만 허용
+            return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("index"))
+        cnt += 1
+        _LOGIN_FAILS[ip] = [cnt, time.time() + LOCK_SECONDS if cnt >= LOCK_THRESHOLD else 0]
         error = "접속 코드가 올바르지 않습니다."
+        if cnt >= LOCK_THRESHOLD:
+            error = f"시도가 너무 많습니다. {LOCK_SECONDS // 60}분 후 다시 시도하세요."
     return render_template("login.html", error=error)
+
+
+# ── 데이터 보존: TTL 지난 업로드·결과 폴더 자동 삭제 (개인정보 최소화) ──
+def _sweep_old_data() -> None:
+    if DATA_TTL_MIN <= 0:
+        return
+    cutoff = time.time() - DATA_TTL_MIN * 60
+    for base in (UPLOAD_ROOT, WEB_OUTPUT_ROOT):
+        if not base.exists():
+            continue
+        for d in base.iterdir():
+            try:
+                if d.is_dir() and d.stat().st_mtime < cutoff:
+                    shutil.rmtree(d, ignore_errors=True)
+            except OSError:
+                pass
 
 
 # ── 학년별 과목 카탈로그 ──────────────────────────────────────────
@@ -361,10 +430,12 @@ def process_job(job_id: str, run_output_dir: Path, grade: int,
 
 @app.get("/")
 def index():
-    # 공유 정보(주소·접속코드)는 본인 PC 접속에서만 노출
+    # 공유 정보(주소·접속코드)는 본인 PC 접속(PC/교내망 모드)에서만 노출.
+    # 서버 모드(프록시 뒤)에서는 노출하지 않는다.
     share = None
     if _is_local(request):
-        share = dict(url=f"http://{lan_ip()}:5050", code=ACCESS_CODE)
+        port = int(os.environ.get("OMR_PORT", "5050"))
+        share = dict(url=f"http://{lan_ip()}:{port}", code=ACCESS_CODE)
     return render_template("index.html", catalog=catalog_for_ui(),
                            exams=er.list_exams(ROOT / "keys"), share=share)
 
@@ -414,6 +485,7 @@ def api_exam_register():
 
 @app.post("/api/score")
 def api_score():
+    _sweep_old_data()                       # 오래된 업로드·결과 자동 정리 (TTL 설정 시)
     run_id = uuid.uuid4().hex[:12]
     run_upload_dir = UPLOAD_ROOT / run_id
     run_output_dir = WEB_OUTPUT_ROOT / run_id
@@ -487,9 +559,15 @@ def download_file(run_id: str, relpath: str):
 
 
 if __name__ == "__main__":
-    print(f"산남고 OMR 채점실")
-    print(f"  본인 PC   : http://127.0.0.1:5050")
-    print(f"  교내망 공유: http://{lan_ip()}:5050   (접속 코드: {ACCESS_CODE})")
-    print(f"  ※ 동료가 접속이 안 되면 Windows 방화벽에서 python 허용 필요")
-    # 0.0.0.0 = 교내망 공유. threaded = 여러 명 동시 사용.
-    app.run(host="0.0.0.0", port=5050, debug=False, threaded=True)
+    host = os.environ.get("OMR_HOST", "0.0.0.0")
+    port = int(os.environ.get("OMR_PORT", "5050"))
+    print("스코어렌즈 · Score Lens — 모의고사 OMR 스캔·채점")
+    if BEHIND_PROXY:
+        print(f"  서버 모드 (리버스 프록시 뒤) — bind {host}:{port}")
+        print(f"  접속 코드: {'(OMR_ACCESS_CODE 환경변수)' if os.environ.get('OMR_ACCESS_CODE') else ACCESS_CODE}")
+    else:
+        print(f"  본인 PC   : http://127.0.0.1:{port}")
+        print(f"  교내망 공유: http://{lan_ip()}:{port}   (접속 코드: {ACCESS_CODE})")
+        print(f"  ※ 동료가 접속이 안 되면 Windows 방화벽에서 python 허용 필요")
+    # 0.0.0.0 = 공유. threaded = 여러 명 동시 사용. (서버는 gunicorn 권장 — DEPLOY.md)
+    app.run(host=host, port=port, debug=False, threaded=True)

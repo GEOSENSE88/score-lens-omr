@@ -273,6 +273,18 @@ def t8_report_layouts():
         wb = openpyxl.load_workbook(out)
         check(f"UNIV {g}학년 시트", f"UNIV {g}학년" in wb.sheetnames and "대교협" in wb.sheetnames)
 
+    # 정오표에 학생 답안이 표시되는지 (5번 오답=학생3→정답4, 2번 미마킹=·)
+    jeongo = {1: {"답": 2, "정답": 2, "배점": 2, "ok": True},
+              2: {"답": 0, "정답": 5, "배점": 2, "ok": False},
+              5: {"답": 3, "정답": 4, "배점": 2, "ok": False}}
+    su = dict(학년=1, 반="01", 번호="03", 이름="정오테스트", 계열번호="",
+              국어=dict(선택="국어", 공통원=80, 선택원="", 원점수=80, 만점=100, 정오=jeongo))
+    out = rx.build_workbook([su], ROOT / "output/_회귀_marksheet.xlsx")
+    ws = openpyxl.load_workbook(out)["정오표_국어"]
+    # 범례 1행, 헤더 2행, 데이터 3행 / 문항 셀은 7열(NB=6)부터
+    v1, v2, v5 = ws.cell(3, 7).value, ws.cell(3, 8).value, ws.cell(3, 11).value
+    check("정오표 학생답 표시", v1 == 2 and v2 == "·" and v5 == "3→4", f"{v1},{v2},{v5}")
+
 
 # ── 9. 등급컷 → 예상 등급·표준점수·백분위 ───────────────────────
 def t9_grade_cuts():
@@ -331,6 +343,30 @@ def t9_grade_cuts():
     check(f"UNIV 예상치 {ok}/{total}", total == 36 and ok == 36)
 
 
+# ── 9.5 서버 모드 보안 (프록시 뒤 인증 우회·무차별 대입 방어) ────
+def t95_proxy_security():
+    print("[9.5] 서버 모드 보안 (프록시 인증 게이트)")
+    code = (
+        "import web_app as w\n"
+        "c=w.app.test_client()\n"
+        "assert w.BEHIND_PROXY is True\n"
+        "r=c.get('/',environ_overrides={'REMOTE_ADDR':'127.0.0.1'})\n"
+        "assert r.status_code==302 and '/login' in r.headers.get('Location',''), 'bypass'\n"
+        "[c.post('/login',data={'code':'0'},environ_overrides={'REMOTE_ADDR':'9.9.9.9'}) for _ in range(5)]\n"
+        "assert c.post('/login',data={'code':'0'},environ_overrides={'REMOTE_ADDR':'9.9.9.9'}).status_code==429, 'no lockout'\n"
+        "c2=w.app.test_client()\n"
+        "assert c2.post('/login',data={'code':'87654321'},environ_overrides={'REMOTE_ADDR':'5.6.7.8'}).status_code==302\n"
+        "assert 'OMR Lens' in c2.get('/',environ_overrides={'REMOTE_ADDR':'5.6.7.8'}).get_data(as_text=True)\n"
+        "print('OK')\n")
+    import os
+    env = os.environ.copy()
+    env.update(PYTHONIOENCODING="utf-8", OMR_BEHIND_PROXY="1", OMR_ACCESS_CODE="87654321")
+    p = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env, text=True,
+                       encoding="utf-8", errors="replace",
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
+    check("프록시 인증 게이트·잠금·브랜딩", p.returncode == 0 and "OK" in p.stdout, p.stdout[-200:])
+
+
 # ── 10. 웹 e2e (옵션: 서버 실행 중일 때) ─────────────────────────
 def t10_web():
     print("[10] 웹 e2e (고1 6과목 → 통합성적표)")
@@ -381,7 +417,7 @@ def main() -> int:
     web = "--web" in sys.argv
     for t in [t1_imports, t2_key_isolation, t3_history_g3, t4_consolidate_g3,
               t5_synth_g12, t6_edge, t65_simfixes, t7_calibrator, t8_report_layouts,
-              t9_grade_cuts] + ([t10_web] if web else []):
+              t9_grade_cuts, t95_proxy_security] + ([t10_web] if web else []):
         try:
             t()
         except Exception as exc:

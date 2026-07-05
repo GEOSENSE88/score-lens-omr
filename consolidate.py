@@ -149,7 +149,9 @@ def consolidate(args) -> list[dict]:
             jeongo, gong, sun = {}, 0, 0
             for q, pt in pts.items():
                 ok = q not in wrong
-                jeongo[q] = {"답": "", "정답": ans.get(q), "배점": pt, "ok": ok}
+                stu = row.get(str(q))              # 점수표 CSV의 문항별 학생답(있으면)
+                stu = int(stu) if str(stu).lstrip("-").isdigit() else ""
+                jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pt, "ok": ok}
                 if ok:
                     if q <= 34:
                         gong += pt
@@ -171,7 +173,9 @@ def consolidate(args) -> list[dict]:
             jeongo, gong, sun = {}, 0, 0
             for q, pt in pts.items():
                 ok = q not in wrong
-                jeongo[q] = {"답": "", "정답": ans.get(q), "배점": pt, "ok": ok}
+                stu = row.get(str(q))              # 점수표 CSV의 문항별 학생답(있으면)
+                stu = int(stu) if str(stu).lstrip("-").isdigit() else ""
+                jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pt, "ok": ok}
                 if ok:
                     if q <= 22:
                         gong += pt
