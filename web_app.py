@@ -49,6 +49,7 @@ ALLOWED_EXTENSIONS = {".pdf", ".csv"}
 # ── 배포 설정 (환경변수) ──────────────────────────────────────────
 BEHIND_PROXY = os.environ.get("OMR_BEHIND_PROXY", "") == "1"
 DATA_TTL_MIN = int(os.environ.get("OMR_DATA_TTL_MIN", "0") or "0")
+OPEN_ACCESS = os.environ.get("OMR_OPEN_ACCESS", "") == "1"   # 접속 코드 없이 누구나 사용
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024
@@ -121,8 +122,9 @@ def _no_cache_html(resp):
 
 @app.before_request
 def _gate():
-    """PC 모드: localhost 무인증. 서버 모드: 전원 접속 코드 세션 필요."""
-    if _is_local(request) or session.get("auth") or request.endpoint in ("login", "static"):
+    """오픈 액세스면 무인증. 아니면 PC(localhost) 무인증 / 원격은 접속 코드."""
+    if OPEN_ACCESS or _is_local(request) or session.get("auth") \
+            or request.endpoint in ("login", "static"):
         return None
     return redirect(url_for("login", next=request.path))
 
@@ -167,6 +169,25 @@ def _sweep_old_data() -> None:
                     shutil.rmtree(d, ignore_errors=True)
             except OSError:
                 pass
+
+
+def _start_sweeper() -> None:
+    """새 업로드가 없어도 결과가 방치되지 않도록 주기적으로 정리한다."""
+    if DATA_TTL_MIN <= 0:
+        return
+
+    def loop():
+        while True:
+            time.sleep(300)
+            try:
+                _sweep_old_data()
+            except Exception:
+                pass
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
+_start_sweeper()
 
 
 # ── 학년별 과목 카탈로그 ──────────────────────────────────────────
@@ -434,6 +455,15 @@ def process_job(job_id: str, run_output_dir: Path, grade: int,
         update_job(job_id, status="error", ok=False, error=repr(exc),
                    downloads=collect_downloads(run_output_dir))
         append_event(job_id, f"오류가 발생했습니다: {exc!r}", kind="error")
+    finally:
+        # 채점이 끝나면 원본 답안지(업로드 PDF)와 페이지 이미지를 즉시 삭제한다.
+        # 서버에는 다운로드용 결과 엑셀만 잠시 남고, 그것도 TTL 후 자동 삭제된다.
+        try:
+            shutil.rmtree(UPLOAD_ROOT / run_output_dir.name, ignore_errors=True)
+            for pages_dir in run_output_dir.rglob("_pages_*"):
+                shutil.rmtree(pages_dir, ignore_errors=True)
+        except OSError:
+            pass
 
 
 @app.get("/")
