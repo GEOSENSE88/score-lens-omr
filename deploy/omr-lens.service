@@ -1,0 +1,22 @@
+# OMR Lens systemd 유닛 — /etc/systemd/system/omr-lens.service 로 복사
+# 분석기(sannam_score)와 완전히 독립된 별도 서비스.
+[Unit]
+Description=OMR Lens (모의고사 OMR 스캔·채점)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/omr-lens
+# 서버 모드: 프록시 뒤 인증 게이트 + 8자리 접속코드 + 결과 60분 후 자동삭제
+Environment=OMR_BEHIND_PROXY=1
+Environment=OMR_DATA_TTL_MIN=60
+Environment=PYTHONIOENCODING=utf-8
+# 접속코드는 access_code.txt 파일 또는 아래 환경변수로. (직접 지정 시 주석 해제)
+# Environment=OMR_ACCESS_CODE=변경할8자리코드
+ExecStart=/opt/omr-lens/.venv/bin/gunicorn -c deploy/gunicorn.conf.py web_app:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

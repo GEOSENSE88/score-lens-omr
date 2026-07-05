@@ -1,4 +1,4 @@
-# score-lens · OMR 자동 가채점기
+# OMR Lens · 모의고사 OMR 스캔·채점
 
 모의고사·학력평가 **OMR 답안지 스캔(PDF)** 을 올리면 자동으로 판독·채점해
 **대교협 통합양식 · UNIV 학년별 양식 · 과목별 정오표**를 한 엑셀로 떨궈 주는
@@ -30,7 +30,12 @@ python web_app.py            # http://127.0.0.1:5050
 브라우저에서 학년을 고르고, "EBSi에서 정답 가져오기"로 시험을 등록한 뒤,
 과목별 스캔 PDF를 올리면 채점 결과 엑셀을 내려받습니다.
 자세한 사용법은 [README_PROGRAM.md](README_PROGRAM.md), 고1·2 확장은
-[README_G12.md](README_G12.md) 참고.
+[README_G12.md](README_G12.md), 서버 상시 배포는 [deploy/DEPLOY.md](deploy/DEPLOY.md) 참고.
+
+### 실행 모드
+- **PC/교내망**: `python web_app.py` — 본인 PC는 무인증, 동료는 접속 코드
+- **서버(리버스 프록시 뒤)**: `OMR_BEHIND_PROXY=1` — 전원 접속 코드 + 무차별
+  대입 잠금 + 보안 쿠키. gunicorn + systemd + nginx 는 `deploy/` 참고.
 
 ## 구조
 
