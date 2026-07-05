@@ -593,7 +593,17 @@ def download_file(run_id: str, relpath: str):
         abort(403)
     if not path.exists() or not path.is_file():
         abort(404)
-    return send_file(path, as_attachment=True)
+    resp = send_file(path, as_attachment=True)
+    # 서버 무흔적: 서버 모드에서 통합성적표(모든 결과 포함)를 내려받으면
+    # 응답을 다 보낸 직후 이 채점 건을 서버에서 완전히 삭제한다.
+    # → 남는 사본은 오직 브라우저에 다운로드된 파일뿐.
+    if (OPEN_ACCESS or BEHIND_PROXY) and path.name.startswith("통합성적표"):
+        @resp.call_on_close
+        def _wipe_run():
+            shutil.rmtree(run_dir, ignore_errors=True)
+            shutil.rmtree(UPLOAD_ROOT / run_id, ignore_errors=True)
+            JOBS.pop(run_id, None)
+    return resp
 
 
 if __name__ == "__main__":
