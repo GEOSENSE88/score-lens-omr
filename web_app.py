@@ -111,6 +111,14 @@ def lan_ip() -> str:
         return "127.0.0.1"
 
 
+@app.after_request
+def _no_cache_html(resp):
+    # HTML 은 캐시하지 않는다 — 업데이트 후 브라우저가 옛 페이지를 보여주는 문제 방지.
+    if resp.mimetype == "text/html":
+        resp.headers["Cache-Control"] = "no-store, must-revalidate"
+    return resp
+
+
 @app.before_request
 def _gate():
     """PC 모드: localhost 무인증. 서버 모드: 전원 접속 코드 세션 필요."""

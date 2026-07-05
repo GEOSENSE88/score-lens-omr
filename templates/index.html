@@ -457,7 +457,7 @@ function renderSubjects(){
 
   grid.innerHTML = "";
   specs.forEach(s => {
-    const el = document.createElement("label");
+    const el = document.createElement("div");
     el.className = "subj" + (s.available ? "" : " off");
     el.innerHTML = `
       ${s.available ? "" : `<span class="badge">보정 대기</span>`}
@@ -484,6 +484,11 @@ function renderSubjects(){
       updateGo();
     };
     input.addEventListener("change", () => setFile(input.files[0]));
+    // 카드 클릭 → 파일 열기 창 (제거 버튼 클릭은 제외)
+    el.addEventListener("click", e => {
+      if (e.target.closest(".rm")) return;
+      if (s.available) input.click();
+    });
     el.querySelector(".rm")?.addEventListener("click", e => {
       e.preventDefault(); e.stopPropagation();
       delete files[s.key]; input.value = "";
