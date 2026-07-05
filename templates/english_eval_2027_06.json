@@ -1,0 +1,27 @@
+{
+  "name": "english_eval_2027_06",
+  "description": "Evaluation-style English OMR sheet for 45 multiple-choice questions.",
+  "objective": [
+    {
+      "q0": 1,
+      "nrows": 20,
+      "xs": [1933, 1995, 2056, 2115, 2174],
+      "y0": 421.0,
+      "pitch": 100.0
+    },
+    {
+      "q0": 21,
+      "nrows": 20,
+      "xs": [2401, 2458, 2520, 2581, 2642],
+      "y0": 421.0,
+      "pitch": 100.0
+    },
+    {
+      "q0": 41,
+      "nrows": 5,
+      "xs": [2861, 2924, 2983, 3042, 3101],
+      "y0": 421.0,
+      "pitch": 100.0
+    }
+  ]
+}

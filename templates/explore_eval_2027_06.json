@@ -1,0 +1,38 @@
+{
+  "name": "explore_eval_2027_06",
+  "description": "Evaluation-style inquiry OMR sheet with two selected subjects, each with 20 multiple-choice questions.",
+  "selections": [
+    {
+      "name": "sel1",
+      "label": "제1선택",
+      "answers": {
+        "q0": 1,
+        "nrows": 20,
+        "xs": [2097, 2163, 2222, 2284, 2340],
+        "y0": 368.0,
+        "pitch": 100.0
+      },
+      "subject_code": {
+        "xs": [1897, 1959],
+        "y0": 876.0,
+        "pitch": 100.0
+      }
+    },
+    {
+      "name": "sel2",
+      "label": "제2선택",
+      "answers": {
+        "q0": 1,
+        "nrows": 20,
+        "xs": [2885, 2945, 3005, 3065, 3125],
+        "y0": 365.0,
+        "pitch": 100.0
+      },
+      "subject_code": {
+        "xs": [2678, 2746],
+        "y0": 869.0,
+        "pitch": 100.0
+      }
+    }
+  ]
+}

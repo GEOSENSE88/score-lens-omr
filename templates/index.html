@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>산남고 OMR 채점실</title>
+<style>
+  :root{
+    --bg:#F8F9F6; --surface:#FFFFFF; --ink:#1B262C; --ink-soft:#4A5A66;
+    --primary:#0F4C75; --primary-2:#3282B8; --sky:#BBE1FA; --sky-soft:#E8F3FC;
+    --success:#05A66B; --success-soft:#E2F5EE;
+    --accent:#EF5F18; --danger:#CB3534; --danger-soft:#FBEAEA;
+    --line:#E3E8EC; --radius:14px;
+    --shadow:0 1px 2px rgba(27,38,44,.05),0 8px 24px rgba(27,38,44,.07);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,
+      "Segoe UI","Malgun Gothic","맑은 고딕",sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:0 20px 80px}
+
+  /* ── 헤더 ─────────────────────────────── */
+  header{
+    background:linear-gradient(135deg,var(--primary) 0%,#1B262C 100%);
+    color:#fff; padding:34px 0 30px; margin-bottom:28px;
+  }
+  header .wrap{padding-bottom:0}
+  .brand{display:flex;align-items:center;gap:14px}
+  .brand-mark{
+    width:46px;height:46px;border-radius:12px;background:var(--sky);
+    display:grid;place-items:center;font-weight:800;font-size:15px;color:var(--primary);
+    letter-spacing:-.5px; box-shadow:inset 0 0 0 2px rgba(15,76,117,.15);
+  }
+  .brand h1{font-size:22px;font-weight:800;letter-spacing:-.3px}
+  .brand p{font-size:13.5px;color:var(--sky);margin-top:2px}
+  .share-badge{
+    margin-left:auto;background:rgba(255,255,255,.10);border:1px solid rgba(187,225,250,.35);
+    border-radius:12px;padding:10px 16px;text-align:right;line-height:1.5;
+  }
+  .share-badge .sb-label{font-size:10.5px;font-weight:800;color:var(--sky);letter-spacing:1px}
+  .share-badge .sb-url{font-size:14.5px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+  .share-badge .sb-code{font-size:12px;color:var(--sky)}
+  .share-badge .sb-code b{color:#FFEF9E;letter-spacing:2px}
+  @media(max-width:720px){.share-badge{display:none}}
+
+  /* ── 카드 & 스텝 ──────────────────────── */
+  .card{
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:24px 26px; margin-bottom:20px;
+  }
+  .step-head{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .step-num{
+    width:28px;height:28px;border-radius:50%;background:var(--primary);color:#fff;
+    display:grid;place-items:center;font-size:14px;font-weight:700;flex-shrink:0;
+  }
+  .step-head h2{font-size:17px;font-weight:700;letter-spacing:-.2px}
+  .step-head .hint{font-size:12.5px;color:var(--ink-soft);margin-left:auto}
+
+  /* ── 학년 세그먼트 ─────────────────────── */
+  .grade-seg{display:flex;gap:8px;margin-bottom:18px}
+  .grade-seg button{
+    flex:1;padding:13px 0;border-radius:10px;border:1.5px solid var(--line);
+    background:#fff;font-size:15px;font-weight:700;color:var(--ink-soft);
+    cursor:pointer;transition:all .15s;font-family:inherit;
+  }
+  .grade-seg button:hover{border-color:var(--primary-2);color:var(--primary)}
+  .grade-seg button.on{
+    background:var(--primary);border-color:var(--primary);color:#fff;
+    box-shadow:0 3px 10px rgba(15,76,117,.25);
+  }
+  .grade-note{
+    display:none;background:var(--sky-soft);border:1px solid var(--sky);
+    border-radius:10px;padding:10px 14px;font-size:13px;color:var(--primary);
+    margin-bottom:16px;
+  }
+  .grade-note.show{display:block}
+
+  .field-row{display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:14px}
+  @media(max-width:720px){.field-row{grid-template-columns:1fr}}
+  .field label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px}
+  .field input[type=text]{
+    width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:10px;
+    font-size:14.5px;font-family:inherit;color:var(--ink);background:#fff;
+    transition:border-color .15s;
+  }
+  .field input[type=text]:focus{outline:none;border-color:var(--primary-2);box-shadow:0 0 0 3px var(--sky-soft)}
+  .field .sub{font-size:11.5px;color:#8A98A3;margin-top:5px}
+  .field select{
+    width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:10px;
+    font-size:14.5px;font-family:inherit;color:var(--ink);background:#fff;cursor:pointer;
+  }
+  .field select:focus{outline:none;border-color:var(--primary-2);box-shadow:0 0 0 3px var(--sky-soft)}
+  .exam-fetch{display:flex;gap:6px;margin-top:8px}
+  .exam-fetch select{flex:0 0 auto;width:auto;padding:8px 10px;font-size:13px}
+  .exam-fetch button{
+    flex:1;border:1.5px solid var(--primary-2);background:var(--sky-soft);color:var(--primary);
+    border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;
+    padding:8px 10px;transition:all .15s;white-space:nowrap;
+  }
+  .exam-fetch button:hover{background:var(--sky)}
+  .exam-fetch button:disabled{opacity:.55;cursor:wait}
+  .fetch-status{font-size:12px;color:var(--primary);margin-top:6px;min-height:0}
+  .fetch-status.err{color:var(--danger)}
+
+  /* 성명 CSV 첨부 */
+  .names-drop{
+    display:flex;align-items:center;gap:10px;padding:10px 13px;
+    border:1.5px dashed var(--line);border-radius:10px;cursor:pointer;
+    font-size:13.5px;color:var(--ink-soft);transition:all .15s;background:#fff;
+  }
+  .names-drop:hover{border-color:var(--primary-2);color:var(--primary)}
+  .names-drop.has{border-style:solid;border-color:var(--success);color:var(--success);background:var(--success-soft)}
+
+  /* ── 과목 업로드 그리드 ─────────────────── */
+  .subject-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
+  .subj{
+    border:1.5px dashed var(--line);border-radius:12px;padding:16px;cursor:pointer;
+    transition:all .15s;background:#FDFDFC;position:relative;display:block;
+  }
+  .subj:hover{border-color:var(--primary-2);background:var(--sky-soft)}
+  .subj.drag{border-color:var(--accent);background:#FFF4EE}
+  .subj.has{border-style:solid;border-color:var(--primary-2);background:var(--sky-soft)}
+  .subj.off{opacity:.55;cursor:not-allowed;background:#F4F5F4}
+  .subj.off:hover{border-color:var(--line)}
+  .subj-top{display:flex;align-items:center;gap:10px}
+  .subj-ic{
+    width:38px;height:38px;border-radius:10px;background:var(--primary);color:#fff;
+    display:grid;place-items:center;font-size:16px;font-weight:700;flex-shrink:0;
+  }
+  .subj.has .subj-ic{background:var(--primary-2)}
+  .subj.off .subj-ic{background:#9AA7B0}
+  .subj-name{font-size:15px;font-weight:700}
+  .subj-state{font-size:12px;color:var(--ink-soft);margin-top:1px}
+  .subj.has .subj-state{color:var(--primary)}
+  .badge{
+    position:absolute;top:10px;right:10px;font-size:10.5px;font-weight:700;
+    padding:3px 8px;border-radius:20px;background:#EEF1F3;color:#8A98A3;
+  }
+  .file-chip{
+    display:none;margin-top:11px;align-items:center;gap:8px;
+    background:#fff;border:1px solid var(--sky);border-radius:8px;
+    padding:7px 10px;font-size:12.5px;color:var(--primary);
+  }
+  .subj.has .file-chip{display:flex}
+  .file-chip .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .file-chip .rm{
+    border:none;background:none;color:var(--danger);cursor:pointer;
+    font-size:15px;line-height:1;padding:2px;font-family:inherit;
+  }
+  .subj input[type=file]{display:none}
+
+  /* ── 실행 버튼 ─────────────────────────── */
+  .go-bar{display:flex;align-items:center;gap:16px;margin:4px 0 24px}
+  .btn-go{
+    flex:1;padding:16px;border:none;border-radius:12px;cursor:pointer;
+    background:var(--primary);color:#fff;font-size:16.5px;font-weight:800;
+    font-family:inherit;letter-spacing:-.2px;transition:all .15s;
+    box-shadow:0 4px 14px rgba(15,76,117,.28);
+  }
+  .btn-go:hover{background:#0D4368;transform:translateY(-1px)}
+  .btn-go:disabled{background:#B9C4CC;box-shadow:none;transform:none;cursor:not-allowed}
+  .go-summary{font-size:13px;color:var(--ink-soft);white-space:nowrap}
+
+  /* ── 진행 패널 ─────────────────────────── */
+  #panel-progress{display:none}
+  .prog-track{height:10px;background:#EDF1F4;border-radius:6px;overflow:hidden;margin:6px 0 16px}
+  .prog-fill{
+    height:100%;width:0%;border-radius:6px;transition:width .5s ease;
+    background:linear-gradient(90deg,var(--primary-2),var(--primary));
+  }
+  .prog-label{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-soft)}
+  .timeline{margin-top:14px;max-height:260px;overflow-y:auto;padding-right:4px}
+  .ev{display:flex;gap:10px;padding:7px 0;font-size:13.5px;border-bottom:1px dashed #EDF1F4}
+  .ev:last-child{border-bottom:none}
+  .ev .t{color:#9AA7B0;font-size:12px;font-variant-numeric:tabular-nums;flex-shrink:0;padding-top:1px}
+  .ev .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex-shrink:0;background:#C3CDD4}
+  .ev.run .dot{background:var(--primary-2);animation:pulse 1.2s infinite}
+  .ev.ok .dot{background:var(--success)}
+  .ev.error .dot{background:var(--danger)}
+  .ev.error{color:var(--danger)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* ── 결과 패널 ─────────────────────────── */
+  #panel-result{display:none}
+  .hero-dl{
+    display:flex;align-items:center;gap:18px;
+    background:linear-gradient(135deg,var(--primary),#16608F);
+    border-radius:14px;padding:22px 24px;color:#fff;margin-bottom:16px;
+    box-shadow:0 6px 20px rgba(15,76,117,.3);
+  }
+  .hero-dl .ic{
+    width:52px;height:52px;border-radius:13px;background:rgba(255,255,255,.16);
+    display:grid;place-items:center;font-size:24px;flex-shrink:0;
+  }
+  .hero-dl .tt{font-size:17px;font-weight:800;letter-spacing:-.2px}
+  .hero-dl .ds{font-size:12.5px;color:var(--sky);margin-top:3px}
+  .hero-dl a{
+    margin-left:auto;background:#fff;color:var(--primary);text-decoration:none;
+    font-weight:800;font-size:14.5px;padding:12px 22px;border-radius:10px;
+    transition:transform .12s;white-space:nowrap;
+  }
+  .hero-dl a:hover{transform:translateY(-1px)}
+  @media(max-width:640px){.hero-dl{flex-wrap:wrap}.hero-dl a{margin-left:0;width:100%;text-align:center}}
+  .dl-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+  .dl-item{
+    display:flex;align-items:center;gap:12px;background:#fff;
+    border:1px solid var(--line);border-radius:11px;padding:13px 15px;
+    text-decoration:none;color:var(--ink);transition:all .13s;
+  }
+  .dl-item:hover{border-color:var(--primary-2);box-shadow:var(--shadow)}
+  .dl-item .ic{
+    width:36px;height:36px;border-radius:9px;background:var(--success-soft);color:var(--success);
+    display:grid;place-items:center;font-size:13px;font-weight:800;flex-shrink:0;
+  }
+  .dl-item .nm{font-size:13.5px;font-weight:700}
+  .dl-item .sz{font-size:11.5px;color:#9AA7B0;margin-top:1px}
+  .result-actions{margin-top:20px;text-align:center}
+  .btn-reset{
+    border:1.5px solid var(--line);background:#fff;color:var(--ink-soft);
+    padding:11px 26px;border-radius:10px;font-size:14px;font-weight:700;
+    cursor:pointer;font-family:inherit;transition:all .15s;
+  }
+  .btn-reset:hover{border-color:var(--primary-2);color:var(--primary)}
+
+  .alert{
+    display:none;background:var(--danger-soft);border:1px solid #F2C5C4;
+    color:var(--danger);border-radius:10px;padding:12px 16px;
+    font-size:13.5px;margin-bottom:16px;font-weight:600;
+  }
+  .alert.show{display:block}
+
+  footer{
+    text-align:center;font-size:12px;color:#9AA7B0;margin-top:36px;line-height:1.8;
+  }
+  footer b{color:var(--ink-soft)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <div class="brand-mark">OMR</div>
+      <div>
+        <h1>산남고 OMR 채점실</h1>
+        <p>답안지 PDF를 올리면 판독·채점 후 대교협·UNIV 양식과 정오표를 한 번에 만듭니다</p>
+      </div>
+      {% if share %}
+      <div class="share-badge" title="같은 학교망의 동료에게 이 주소와 코드를 알려주세요">
+        <div class="sb-label">동료 공유</div>
+        <div class="sb-url">{{ share.url }}</div>
+        <div class="sb-code">접속 코드 <b>{{ share.code }}</b></div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="alert" id="alert"></div>
+
+  <form id="form">
+    <!-- STEP 1 -->
+    <section class="card" id="panel-setup">
+      <div class="step-head">
+        <div class="step-num">1</div>
+        <h2>시험 정보</h2>
+        <span class="hint">학년을 먼저 선택하세요</span>
+      </div>
+
+      <div class="grade-seg" id="gradeSeg">
+        <button type="button" data-g="1">고1</button>
+        <button type="button" data-g="2">고2</button>
+        <button type="button" data-g="3" class="on">고3</button>
+      </div>
+      <div class="grade-note" id="gradeNote"></div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="exam_select">시험 선택</label>
+          <select id="exam_select"></select>
+          <div class="sub" id="examSub">등록된 시험 중 선택 — 없으면 아래에서 가져오기</div>
+          <div class="exam-fetch" id="examFetch">
+            <select id="fy"></select>
+            <select id="fm"></select>
+            <button type="button" id="btnFetch">EBSi에서 정답 가져오기</button>
+          </div>
+          <div class="fetch-status" id="fetchStatus"></div>
+        </div>
+        <div class="field">
+          <label for="exam_year">학년도 (대교협 양식)</label>
+          <input type="text" id="exam_year" name="exam_year" placeholder="예: 2027" autocomplete="off">
+          <div class="sub">비우면 학년 기준 자동 입력</div>
+        </div>
+        <div class="field">
+          <label>성명 명단 CSV <span style="font-weight:400">(선택)</span></label>
+          <label class="names-drop" id="namesDrop">
+            <span id="namesLabel">📎 반·번호·성명 CSV 첨부 — 없으면 국어 판독 성명 사용</span>
+            <input type="file" name="names" id="namesInput" accept=".csv" hidden>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 2 -->
+    <section class="card">
+      <div class="step-head">
+        <div class="step-num">2</div>
+        <h2>답안지 업로드</h2>
+        <span class="hint">과목 카드를 클릭하거나 PDF를 끌어다 놓으세요</span>
+      </div>
+      <div class="subject-grid" id="subjectGrid"></div>
+    </section>
+
+    <!-- 실행 -->
+    <div class="go-bar">
+      <button type="submit" class="btn-go" id="btnGo" disabled>채점 시작</button>
+      <span class="go-summary" id="goSummary">업로드된 과목 없음</span>
+    </div>
+  </form>
+
+  <!-- STEP 3: 진행 -->
+  <section class="card" id="panel-progress">
+    <div class="step-head">
+      <div class="step-num">3</div>
+      <h2>채점 진행</h2>
+    </div>
+    <div class="prog-label"><span id="progText">준비 중…</span><span id="progPct">0%</span></div>
+    <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+    <div class="timeline" id="timeline"></div>
+  </section>
+
+  <!-- 결과 -->
+  <section class="card" id="panel-result">
+    <div class="step-head">
+      <div class="step-num" style="background:var(--success)">✓</div>
+      <h2>채점 완료 — 결과 내려받기</h2>
+    </div>
+    <div id="heroSlot"></div>
+    <div class="dl-list" id="dlList"></div>
+    <div class="result-actions">
+      <button type="button" class="btn-reset" id="btnReset">새 채점 시작</button>
+    </div>
+  </section>
+
+  <footer>
+    <b>산남고등학교 OMR 자동 채점 시스템</b> · score_lens<br>
+    표준점수·백분위·등급은 EBSi 예상 등급컷 기반 <b>추정치</b>입니다 (통합성적표의 '예상등급컷' 시트에 근거 수록).<br>
+    공식 성적표를 대체하지 않으며, 고3 국어·수학은 EBSi 원점수 컷 비공개로 예상치가 제공되지 않습니다.
+  </footer>
+</div>
+
+<script>
+const CATALOG = {{ catalog|tojson }};
+let EXAMS = {{ exams|tojson }};
+let grade = 3;
+let pollTimer = null;
+
+const $ = s => document.querySelector(s);
+const grid = $("#subjectGrid");
+const files = {};   // key -> File
+
+/* ── 학년 세그먼트 ── */
+document.querySelectorAll("#gradeSeg button").forEach(b => {
+  b.addEventListener("click", () => {
+    grade = +b.dataset.g;
+    document.querySelectorAll("#gradeSeg button").forEach(x => x.classList.toggle("on", x === b));
+    Object.keys(files).forEach(k => delete files[k]);
+    renderSubjects();
+    renderExams();
+    updateGo();
+  });
+});
+
+/* ── 시험 선택 드롭다운 ── */
+function renderExams(keepId){
+  const sel = $("#exam_select");
+  const mine = EXAMS.filter(e => e.grade === grade);
+  sel.innerHTML = "";
+  if (!mine.length){
+    sel.appendChild(new Option("등록된 시험 없음 — 아래에서 가져오기", ""));
+  } else {
+    mine.forEach(e => sel.appendChild(
+      new Option(`${e.label} · ${e.subjects.length}과목 정답 준비됨`, e.exam_id)));
+  }
+  if (keepId && [...sel.options].some(o => o.value === keepId)) sel.value = keepId;
+}
+
+/* 연/월 선택 초기화 */
+(function(){
+  const fy = $("#fy"), fm = $("#fm");
+  const nowY = new Date().getFullYear();
+  for (let y = nowY; y >= nowY - 2; y--) fy.appendChild(new Option(y + "년", y));
+  [3,4,5,6,7,9,10,11].forEach(m => fm.appendChild(new Option(m + "월", m)));
+  fm.value = "6";
+})();
+
+/* EBSi 자동 등록 */
+$("#btnFetch").addEventListener("click", async () => {
+  const btn = $("#btnFetch"), st = $("#fetchStatus");
+  btn.disabled = true; st.classList.remove("err");
+  st.textContent = "EBSi에서 시험을 찾는 중…";
+  try{
+    const data = new FormData();
+    data.append("year", $("#fy").value);
+    data.append("month", $("#fm").value);
+    data.append("grade", grade);
+    const res = await fetch("/api/exams/register", {method:"POST", body:data});
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.message || "요청 실패");
+    // 등록 잡 폴링
+    await new Promise((resolve, reject) => {
+      const t = setInterval(async () => {
+        try{
+          const s = await (await fetch(j.status_url)).json();
+          st.textContent = s.message || "진행 중…";
+          if (s.status === "done" || s.status === "error"){
+            clearInterval(t);
+            if (s.exams) EXAMS = s.exams;
+            const ir = s.result && s.result.irecord;
+            renderExams(ir || undefined);
+            if (s.ok) { st.textContent = "✓ " + (s.message || "등록 완료"); resolve(); }
+            else reject(new Error(s.message || (s.result && s.result.errors && s.result.errors[0]) || "등록 실패"));
+          }
+        }catch(e){ /* 다음 폴링에서 재시도 */ }
+      }, 1500);
+    });
+  }catch(err){
+    st.classList.add("err");
+    st.textContent = "✕ " + err.message;
+  }finally{
+    btn.disabled = false;
+  }
+});
+
+/* ── 과목 그리드 렌더 ── */
+function renderSubjects(){
+  const specs = CATALOG[grade] || [];
+  const pending = specs.filter(s => !s.available).map(s => s.label);
+  const note = $("#gradeNote");
+  if (pending.length){
+    note.textContent = `고${grade} ${pending.join("·")} 판독 좌표는 첫 실물 스캔으로 보정한 뒤 활성화됩니다.`;
+    note.classList.add("show");
+  } else note.classList.remove("show");
+
+  grid.innerHTML = "";
+  specs.forEach(s => {
+    const el = document.createElement("label");
+    el.className = "subj" + (s.available ? "" : " off");
+    el.innerHTML = `
+      ${s.available ? "" : `<span class="badge">보정 대기</span>`}
+      <div class="subj-top">
+        <div class="subj-ic">${s.icon}</div>
+        <div>
+          <div class="subj-name">${s.label}</div>
+          <div class="subj-state" data-state>${s.available ? "PDF 선택 또는 드래그" : "고" + grade + " 스캔 보정 후 사용 가능"}</div>
+        </div>
+      </div>
+      <div class="file-chip">
+        <span>📄</span><span class="nm" data-nm></span>
+        <button type="button" class="rm" title="제거">✕</button>
+      </div>
+      <input type="file" accept=".pdf" ${s.available ? "" : "disabled"}>
+    `;
+    const input = el.querySelector("input");
+    const setFile = f => {
+      if (!f || !f.name.toLowerCase().endsWith(".pdf")) return;
+      files[s.key] = f;
+      el.classList.add("has");
+      el.querySelector("[data-nm]").textContent = `${f.name} (${(f.size/1048576).toFixed(1)}MB)`;
+      el.querySelector("[data-state]").textContent = "업로드 준비 완료";
+      updateGo();
+    };
+    input.addEventListener("change", () => setFile(input.files[0]));
+    el.querySelector(".rm")?.addEventListener("click", e => {
+      e.preventDefault(); e.stopPropagation();
+      delete files[s.key]; input.value = "";
+      el.classList.remove("has");
+      el.querySelector("[data-state]").textContent = "PDF 선택 또는 드래그";
+      updateGo();
+    });
+    if (s.available){
+      ["dragover","dragenter"].forEach(ev => el.addEventListener(ev, e => {
+        e.preventDefault(); el.classList.add("drag");
+      }));
+      ["dragleave","drop"].forEach(ev => el.addEventListener(ev, e => {
+        e.preventDefault(); el.classList.remove("drag");
+      }));
+      el.addEventListener("drop", e => setFile(e.dataTransfer.files[0]));
+    }
+    grid.appendChild(el);
+  });
+}
+
+/* ── 성명 CSV ── */
+$("#namesDrop").addEventListener("click", () => $("#namesInput").click());
+$("#namesInput").addEventListener("change", e => {
+  const f = e.target.files[0];
+  const d = $("#namesDrop");
+  if (f){ $("#namesLabel").textContent = `✓ ${f.name}`; d.classList.add("has"); }
+  else { $("#namesLabel").textContent = "📎 반·번호·성명 CSV 첨부 — 없으면 국어 판독 성명 사용"; d.classList.remove("has"); }
+});
+
+function updateGo(){
+  const n = Object.keys(files).length;
+  $("#btnGo").disabled = n === 0;
+  const labels = (CATALOG[grade]||[]).filter(s => files[s.key]).map(s => s.label);
+  $("#goSummary").textContent = n ? `${labels.join(" · ")} — ${n}과목 채점` : "업로드된 과목 없음";
+}
+
+function showAlert(msg){
+  const a = $("#alert");
+  a.textContent = msg; a.classList.add("show");
+  window.scrollTo({top:0, behavior:"smooth"});
+  setTimeout(() => a.classList.remove("show"), 6000);
+}
+
+/* ── 제출 & 폴링 ── */
+$("#form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const data = new FormData();
+  data.append("grade", grade);
+  data.append("exam_id", $("#exam_select").value);
+  data.append("exam_year", $("#exam_year").value);
+  const nf = $("#namesInput").files[0];
+  if (nf) data.append("names", nf);
+  for (const [k, f] of Object.entries(files)) data.append(`pdf_${k}`, f);
+
+  $("#btnGo").disabled = true;
+  $("#btnGo").textContent = "업로드 중…";
+  try{
+    const res = await fetch("/api/score", {method:"POST", body:data});
+    const j = await res.json();
+    if (!j.ok){ throw new Error(j.message || "요청 실패"); }
+    $("#btnGo").textContent = "채점 진행 중…";
+    $("#panel-progress").style.display = "block";
+    $("#panel-progress").scrollIntoView({behavior:"smooth"});
+    poll(j.status_url);
+  }catch(err){
+    showAlert(err.message);
+    $("#btnGo").disabled = false;
+    $("#btnGo").textContent = "채점 시작";
+  }
+});
+
+function poll(url){
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try{
+      const j = await (await fetch(url)).json();
+      renderProgress(j);
+      if (j.status === "done" || j.status === "error"){
+        clearInterval(pollTimer);
+        renderResult(j);
+      }
+    }catch(e){ /* 서버 일시 오류 — 다음 폴링에서 재시도 */ }
+  }, 1200);
+}
+
+function renderProgress(j){
+  const pct = j.total ? Math.round((j.completed / j.total) * 90) + (j.status === "done" ? 10 : 0) : 0;
+  $("#progFill").style.width = pct + "%";
+  $("#progPct").textContent = pct + "%";
+  $("#progText").textContent = j.message || "";
+  const tl = $("#timeline");
+  tl.innerHTML = (j.events || []).map(ev =>
+    `<div class="ev ${ev.kind}"><span class="t">${ev.t}</span><span class="dot"></span><span>${ev.text}</span></div>`
+  ).join("");
+  tl.scrollTop = tl.scrollHeight;
+}
+
+function renderResult(j){
+  $("#btnGo").textContent = "채점 시작";
+  const panel = $("#panel-result");
+  panel.style.display = "block";
+  const combined = (j.downloads || []).find(d => d.kind === "combined");
+  const others = (j.downloads || []).filter(d => d.kind !== "combined");
+  $("#heroSlot").innerHTML = combined ? `
+    <div class="hero-dl">
+      <div class="ic">📊</div>
+      <div>
+        <div class="tt">${combined.title}</div>
+        <div class="ds">대교협 가채점 · UNIV 양식(예상 등급·표점·백분위) · 과목별 정오표 · 예상등급컷 근거</div>
+      </div>
+      <a href="${combined.url}">엑셀 다운로드</a>
+    </div>` : "";
+  $("#dlList").innerHTML = others.map(d => `
+    <a class="dl-item" href="${d.url}">
+      <div class="ic">XLS</div>
+      <div><div class="nm">${d.title}</div><div class="sz">${(d.size/1024).toFixed(0)} KB</div></div>
+    </a>`).join("");
+  panel.scrollIntoView({behavior:"smooth"});
+}
+
+$("#btnReset").addEventListener("click", () => location.reload());
+
+renderSubjects();
+renderExams();
+updateGo();
+</script>
+</body>
+</html>

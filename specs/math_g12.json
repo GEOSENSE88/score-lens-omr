@@ -1,0 +1,13 @@
+{
+  "name": "math_g12",
+  "subject": "수학",
+  "grade": "고1·2",
+  "_note": "고1·2 수학 학평: 30문항 = 객관식 1-21(3열: 1-7 / 8-14 / 15-21) + 단답형 22-30(백·십·일). ★선택과목(확통/미적/기하) 없음 → 고3 math 템플릿과 다름. objective 블록은 calibrate_objective.py 로 자동 보정. 단답형 22-30 의 sib/y0/pitch 는 22번~30번 박스에서 scan-day 실측(math_core.short 스키마).",
+  "objective": [
+    {"q0": 1,  "nrows": 7, "x_lo": 1090, "x_hi": 1420, "y_lo": 300, "y_hi": 1050},
+    {"q0": 8,  "nrows": 7, "x_lo": 1510, "x_hi": 1840, "y_lo": 300, "y_hi": 1050},
+    {"q0": 15, "nrows": 7, "x_lo": 1930, "x_hi": 2260, "y_lo": 300, "y_hi": 1050}
+  ],
+  "short_questions": [22, 23, 24, 25, 26, 27, 28, 29, 30],
+  "subject_marks": {}
+}

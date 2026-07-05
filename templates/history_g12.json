@@ -1,0 +1,21 @@
+{
+  "name": "history_g12",
+  "description": "Auto-calibrated from 6 pages by calibrate_objective.py",
+  "objective": [
+    {
+      "q0": 1,
+      "nrows": 20,
+      "xs": [
+        2190.4,
+        2251.2,
+        2309.1,
+        2368.8,
+        2430.4
+      ],
+      "y0": 419.3,
+      "pitch": 99.9
+    }
+  ],
+  "subject": "한국사",
+  "_n_pages": 6
+}

@@ -1,0 +1,7 @@
+numpy
+opencv-python
+openpyxl
+PyMuPDF
+requests
+lxml
+Flask

@@ -1,0 +1,13 @@
+{
+  "name": "history_eval_2027_06",
+  "description": "Evaluation-style Korean History OMR sheet for 20 multiple-choice questions.",
+  "objective": [
+    {
+      "q0": 1,
+      "nrows": 20,
+      "xs": [2184, 2244, 2303, 2364, 2423],
+      "y0": 418.5,
+      "pitch": 100.0
+    }
+  ]
+}

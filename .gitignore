@@ -1,0 +1,27 @@
+# ── 학생 개인정보 · 시험 데이터 (절대 커밋 금지) ──
+# keys/ : EBSi 정답키·등급컷 (재배포 저작권 + 시험 데이터)
+# input,work,output,uploads : 스캔·채점 결과 (학생 성명·성적)
+keys/
+input/
+work/
+output/
+uploads/
+
+# ── 서버 비밀 · 로컬 설정 ──
+access_code.txt
+.flask_secret
+.local_fixtures.json
+
+# ── 파이썬 ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ── OS / 에디터 ──
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
