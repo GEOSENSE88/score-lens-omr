@@ -44,6 +44,11 @@ def _session() -> requests.Session:
     s.verify = False    # 학교망 프록시 인증서 대응
     s.headers.update({"User-Agent": "Mozilla/5.0", "Referer": f"{EBSI}/",
                       "X-Requested-With": "XMLHttpRequest"})
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    retry = Retry(total=4, connect=4, read=4, backoff_factor=1.5,
+                  status_forcelist=[502, 503, 504], allowed_methods=None)
+    s.mount("https://", HTTPAdapter(max_retries=retry))
     return s
 
 

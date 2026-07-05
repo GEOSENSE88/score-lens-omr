@@ -40,6 +40,12 @@ def _session() -> requests.Session:
     s = requests.Session()
     s.verify = False    # 학교망 프록시 인증서 대응 (기존 스크립트들과 동일)
     s.headers.update({"User-Agent": "Mozilla/5.0", "Referer": f"{EBSI}/"})
+    # EBSi 가 서버 egress 에서 가끔 느림 → 연결/읽기 타임아웃 재시도(백오프)
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    retry = Retry(total=4, connect=4, read=4, backoff_factor=1.5,
+                  status_forcelist=[502, 503, 504], allowed_methods=None)
+    s.mount("https://", HTTPAdapter(max_retries=retry))
     return s
 
 
@@ -49,7 +55,7 @@ def probe_irecord(irecord: str, session: requests.Session | None = None) -> bool
     s = session or _session()
     try:
         r = s.get(f"{EBSI}/ebs/xip/xipt/RetrieveSCVMainTop.ajax",
-                  params={"irecord": irecord}, timeout=8)
+                  params={"irecord": irecord}, timeout=20)
         return r.status_code == 200 and len(r.content) > 10_000
     except requests.RequestException:
         return False
