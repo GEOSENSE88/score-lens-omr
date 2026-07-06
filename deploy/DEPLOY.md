@@ -60,3 +60,13 @@ sudo certbot --nginx -d omr.26sannam3.site
 ```bash
 cd /opt/omr-lens && git pull && sudo systemctl restart omr-lens
 ```
+
+## ⚠️ nginx 설정 변경 시 주의
+`deploy/nginx-omr-lens.conf` 를 서버에 `cp` 로 덮어쓰면 **certbot 이 넣은 443
+ssl_certificate 줄이 사라져 HTTPS 가 깨진다**(Cloudflare 526). 설정을 바꿨으면
+반드시 이어서:
+```bash
+sudo certbot --nginx -d omr.26sannam3.site --non-interactive --reinstall --redirect
+sudo nginx -t && sudo systemctl reload nginx
+```
+(client_max_body_size 같은 값만 바꿀 땐 서버 파일을 직접 sed 로 고치는 게 더 안전.)
