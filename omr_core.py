@@ -69,6 +69,43 @@ def make_anchor_transform(gray: np.ndarray, ref=REF_TOP_ANCHOR):
     return lambda x, y: (xl + (x - rxl) * sx, y + dy)
 
 
+def _to_ref(bgr: np.ndarray) -> np.ndarray:
+    h, w = bgr.shape[:2]
+    if (w, h) != (REF_W, REF_H):
+        return cv2.resize(bgr, (REF_W, REF_H), interpolation=cv2.INTER_AREA)
+    return bgr
+
+
+def _top_mark_count(gray: np.ndarray) -> int:
+    """상단 130px 띠에서 타이밍 마크(검정 눈금) 개수. 방향 판별용."""
+    strip = gray[0:130, :]
+    dark = (strip < 90).astype("uint8") * 255
+    n, _, stats, _ = cv2.connectedComponentsWithStats(dark, 8)
+    c = 0
+    for i in range(1, n):
+        x, y, w, h, a = stats[i]
+        if 12 <= w <= 45 and 25 <= h <= 110 and a > 400:
+            c += 1
+    return c
+
+
+def auto_orient(bgr: np.ndarray) -> np.ndarray:
+    """스캔이 뒤집히거나(180°) 옆으로 돌아가도(90/270°) 상단 타이밍마크가
+    위로 오도록 바로잡는다. 정상 스캔은 그대로 통과(오버헤드 없음)."""
+    ref0 = _to_ref(bgr)
+    if _top_mark_count(cv2.cvtColor(ref0, cv2.COLOR_BGR2GRAY)) >= 10:
+        return ref0                                    # 정상 — 빠른 경로
+    best = (_top_mark_count(cv2.cvtColor(ref0, cv2.COLOR_BGR2GRAY)), ref0)
+    for rot in (cv2.ROTATE_180, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE):
+        ref = _to_ref(cv2.rotate(bgr, rot))
+        c = _top_mark_count(cv2.cvtColor(ref, cv2.COLOR_BGR2GRAY))
+        if c >= 10:
+            return ref                                 # 유효 방향 발견
+        if c > best[0]:
+            best = (c, ref)
+    return best[1]                                     # 못 찾으면 마크 최다 방향
+
+
 def load_page(path: str) -> np.ndarray:
     # cv2.imread 는 Windows 에서 한글 경로/파일명을 못 읽는다 → fromfile+imdecode 로 우회
     try:
@@ -77,10 +114,7 @@ def load_page(path: str) -> np.ndarray:
         img = None
     if img is None:
         raise FileNotFoundError(path)
-    h, w = img.shape[:2]
-    if (w, h) != (REF_W, REF_H):
-        img = cv2.resize(img, (REF_W, REF_H), interpolation=cv2.INTER_AREA)
-    return img
+    return auto_orient(img)
 
 
 def red_mask(img: np.ndarray) -> np.ndarray:

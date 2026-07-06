@@ -52,7 +52,8 @@ DATA_TTL_MIN = int(os.environ.get("OMR_DATA_TTL_MIN", "0") or "0")
 OPEN_ACCESS = os.environ.get("OMR_OPEN_ACCESS", "") == "1"   # 접속 코드 없이 누구나 사용
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024
+# 대량(250명×여러 과목) 스캔 대비 — 업로드 한도 넉넉히. (nginx client_max_body_size 도 함께 상향)
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("OMR_MAX_UPLOAD_MB", "1200")) * 1024 * 1024
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
@@ -110,6 +111,14 @@ def lan_ip() -> str:
         return ip
     except OSError:
         return "127.0.0.1"
+
+
+@app.errorhandler(413)
+def _too_large(e):
+    lim = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+    return jsonify(ok=False, message=(
+        f"업로드 용량이 한도({lim}MB)를 넘었습니다. 과목을 나눠서 올리거나 "
+        "스캔 해상도를 낮춰(흑백·200dpi 권장) 다시 시도하세요.")), 413
 
 
 @app.after_request

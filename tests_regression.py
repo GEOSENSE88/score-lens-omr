@@ -241,6 +241,40 @@ def t65_simfixes():
     check("g12 과목ID 매핑", dict((s, p) for s, n, p in pairs).get("국어") == "105")
 
 
+# ── 6.7 스캔 방향 자동보정 (180°/90°/270°) ──────────────────────
+def t67_autorotate():
+    print("[6.7] 스캔 방향 자동보정")
+    import cv2
+    import json as _json
+    import synth_omr as so
+    import omr_core as oc
+    import id_reader as idr
+    import history_core as hc
+    import run_objective as ro
+    key = _json.loads((ROOT / "keys/202606041_영어_xip_api.json").read_text(encoding="utf-8"))
+    kans = {int(q): int(v) for q, v in key["answers"].items()}
+    template = ro.load_template(ROOT / "templates/english_g12.json")
+    keyobj = ro.load_subject_key(ROOT / "keys", "영어", "202606041")
+    img = so.draw_card("영어", grade=1, ban="03", beon="07", answers=dict(kans))  # 만점 답안
+    rots = {"0": img, "180": cv2.rotate(img, cv2.ROTATE_180),
+            "90": cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE),
+            "270": cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)}
+    import numpy as np
+    import tempfile
+    ok = True
+    for name, im in rots.items():
+        p = Path(tempfile.gettempdir()) / f"_rot_{name}.png"
+        cv2.imencode(".png", im)[1].tofile(str(p))
+        gray = cv2.cvtColor(oc.load_page(str(p)), cv2.COLOR_BGR2GRAY)   # auto_orient 적용
+        sid = idr.read_id(gray, "g12", oc.make_anchor_transform(gray))
+        ans = hc.read_answers(gray, oc.make_anchor_transform(gray), template)
+        g = ro.grade_known(ans, keyobj, 45)
+        if not (g["score"] == 100 and sid["ban"] == "03" and sid["beon"] == "07"):
+            ok = False
+        p.unlink(missing_ok=True)
+    check("0/90/180/270° 모두 만점+수험번호 정상", ok)
+
+
 # ── 7. 좌표 보정기 재현성 (고3 영어 실스캔) ──────────────────────
 def t7_calibrator():
     print("[7] 좌표 보정기 (고3 영어 기존 검증좌표 재현)")
@@ -436,7 +470,7 @@ def t10_web():
 def main() -> int:
     web = "--web" in sys.argv
     for t in [t1_imports, t2_key_isolation, t3_history_g3, t4_consolidate_g3,
-              t5_synth_g12, t6_edge, t65_simfixes, t7_calibrator, t8_report_layouts,
+              t5_synth_g12, t6_edge, t65_simfixes, t67_autorotate, t7_calibrator, t8_report_layouts,
               t9_grade_cuts, t93_mimac, t95_proxy_security] + ([t10_web] if web else []):
         try:
             t()
