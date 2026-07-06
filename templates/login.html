@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OMR Lens — 접속</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%230F4C75'/%3E%3Ccircle cx='20' cy='20' r='11' fill='none' stroke='%23BBE1FA' stroke-width='3.2'/%3E%3Ccircle cx='20' cy='20' r='4.4' fill='%23BBE1FA'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" sizes="48x48" href="{{ url_for('static', filename='favicon-48.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon-180.png') }}">
 <style>
   :root{
     --bg:#F8F9F6; --ink:#1B262C; --ink-soft:#4A5A66;
@@ -23,8 +24,8 @@
     box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center;
   }
   .mark{
-    width:56px;height:56px;border-radius:14px;background:var(--sky);margin:0 auto 16px;
-    display:grid;place-items:center;font-weight:800;font-size:17px;color:var(--primary);
+    width:64px;height:64px;display:block;margin:0 auto 16px;
+    filter:drop-shadow(0 2px 6px rgba(15,76,117,.25));
   }
   h1{font-size:20px;font-weight:800;letter-spacing:-.3px}
   p{font-size:13px;color:var(--ink-soft);margin:8px 0 22px;line-height:1.6}
@@ -43,13 +44,7 @@
 </head>
 <body>
   <form class="card" method="post">
-    <div class="mark">
-      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OMR Lens">
-        <circle cx="24" cy="24" r="13" fill="none" stroke="#0F4C75" stroke-width="4"/>
-        <circle cx="24" cy="24" r="5.6" fill="#0F4C75"/>
-        <path d="M34 34 L40 40" stroke="#0F4C75" stroke-width="4" stroke-linecap="round"/>
-      </svg>
-    </div>
+    <img class="mark" src="{{ url_for('static', filename='omr-lens-icon.png') }}" alt="OMR Lens">
     <h1>OMR Lens</h1>
     <p>모의고사 OMR 스캔·채점 · 공유 접속입니다.<br>담당 선생님께 받은 <b>접속 코드</b>를 입력하세요.</p>
     <input type="password" name="code" inputmode="numeric" autocomplete="off" autofocus placeholder="······">

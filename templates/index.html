@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OMR Lens — 모의고사 스캔·채점</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%230F4C75'/%3E%3Ccircle cx='20' cy='20' r='11' fill='none' stroke='%23BBE1FA' stroke-width='3.2'/%3E%3Ccircle cx='20' cy='20' r='4.4' fill='%23BBE1FA'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32.png') }}">
+<link rel="icon" type="image/png" sizes="48x48" href="{{ url_for('static', filename='favicon-48.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon-180.png') }}">
 <style>
   :root{
     --bg:#F8F9F6; --surface:#FFFFFF; --ink:#1B262C; --ink-soft:#4A5A66;
@@ -30,14 +32,14 @@
     color:#fff; padding:34px 0 30px; margin-bottom:28px;
   }
   header .wrap{padding-bottom:0}
-  .brand{display:flex;align-items:center;gap:14px}
-  .brand-mark{
-    width:48px;height:48px;flex-shrink:0;filter:drop-shadow(0 2px 6px rgba(0,0,0,.25));
+  .brand{display:flex;align-items:center;gap:16px}
+  .brand-logo{
+    height:82px;width:auto;flex-shrink:0;
+    filter:drop-shadow(0 3px 8px rgba(0,0,0,.3));
   }
-  .brand-mark svg{display:block;width:100%;height:100%}
-  .brand h1{font-size:22px;font-weight:800;letter-spacing:-.3px}
-  .brand h1 .en{color:var(--sky)}
-  .brand p{font-size:13.5px;color:var(--sky);margin-top:2px}
+  .brand-text{min-width:0}
+  .brand p{font-size:13.5px;color:var(--sky)}
+  @media(max-width:560px){.brand-logo{height:60px}.brand p{font-size:12px}}
   .share-badge{
     margin-left:auto;background:rgba(255,255,255,.10);border:1px solid rgba(187,225,250,.35);
     border-radius:12px;padding:10px 16px;text-align:right;line-height:1.5;
@@ -252,16 +254,8 @@
 <header>
   <div class="wrap">
     <div class="brand">
-      <div class="brand-mark">
-        <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OMR Lens">
-          <rect width="48" height="48" rx="12" fill="#BBE1FA"/>
-          <circle cx="24" cy="24" r="13" fill="none" stroke="#0F4C75" stroke-width="4"/>
-          <circle cx="24" cy="24" r="5.6" fill="#0F4C75"/>
-          <path d="M34 34 L40 40" stroke="#0F4C75" stroke-width="4" stroke-linecap="round"/>
-        </svg>
-      </div>
-      <div>
-        <h1>OMR&nbsp;<span class="en">Lens</span></h1>
+      <img class="brand-logo" src="{{ url_for('static', filename='omr-lens-logo.png') }}" alt="OMR Lens — 모의고사 OMR 스캔·채점">
+      <div class="brand-text">
         <p>모의고사 OMR 답안지를 스캔하면 자동 채점 → 대교협·UNIV 성적표와 정오표까지</p>
       </div>
       {% if share %}
