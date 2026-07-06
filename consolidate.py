@@ -267,11 +267,17 @@ def _merge_split_students(students: dict[str, dict]) -> None:
 
 
 def _attach_estimates(students: list[dict], exam_id: str | None, keys_dir) -> dict:
-    """EBSi 등급컷으로 과목별 예상등급/예상표준점수/예상백분위 부착. 반환=등급컷 dict."""
+    """EBSi 등급컷으로 과목별 예상등급/표점/백분위 부착. 반환=등급컷 dict.
+
+    고3 국어·수학은 EBSi 가 원점수컷을 비우므로(선택과목제) 예상등급이 공란인데,
+    미맥의 선택과목별 원점수컷이 있으면 학생 선택과목에 맞춰 예상등급을 채운다.
+    """
     if not exam_id:
         return {}
     cuts = gc.load_grade_cuts(exam_id, keys_dir)
-    if not cuts:
+    import mimac_cuts as mimac
+    has_mimac = bool(mimac.load_g3_cuts(exam_id, keys_dir))
+    if not cuts and not has_mimac:
         return {}
     for s in students:
         for subject in ("국어", "수학", "영어", "한국사"):
@@ -279,7 +285,14 @@ def _attach_estimates(students: list[dict], exam_id: str | None, keys_dir) -> di
             if not d:
                 continue
             est = gc.estimate(gc.find_subject_cut(cuts, subject), d.get("원점수"))
-            d.update(예상등급=est["등급"], 예상표준점수=est["표준점수"], 예상백분위=est["백분위"])
+            등급, 표점, 백분위 = est["등급"], est["표준점수"], est["백분위"]
+            # 고3 국·수: EBSi 등급 공란이면 미맥 선택과목별 원점수컷으로 보강
+            if subject in ("국어", "수학") and 등급 in ("", None):
+                mg = mimac.mimac_g3_grade(exam_id, subject, d.get("선택", ""),
+                                          d.get("원점수"), keys_dir)
+                if mg != "":
+                    등급 = mg
+            d.update(예상등급=등급, 예상표준점수=표점, 예상백분위=백분위)
         for t in (s.get("탐구") or []):
             est = gc.estimate(gc.find_subject_cut(cuts, t.get("과목", "")), t.get("원점수"))
             t.update(예상등급=est["등급"], 예상표준점수=est["표준점수"], 예상백분위=est["백분위"])

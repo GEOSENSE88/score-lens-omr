@@ -343,6 +343,26 @@ def t9_grade_cuts():
     check(f"UNIV 예상치 {ok}/{total}", total == 36 and ok == 36)
 
 
+# ── 9.3 미맥 고3 국·수 원점수 예상등급 ───────────────────────────
+def t93_mimac():
+    print("[9.3] 미맥 고3 국·수 예상등급")
+    import mimac_cuts as mimac
+    data = mimac.load_g3_cuts("202606043")
+    if not data:
+        print("  – 미맥 컷 파일 없음 → 건너뜀 (register 후 생성)")
+        return
+    # 저장 형식·시험일 검증
+    check("미맥 시험일 6.4", data.get("_meta", {}).get("on_date") == "6.4")
+    # 등급 산출: 화작 컷 1:95 2:90 3:82 4:72 → 경계 확인
+    g = lambda raw: mimac.mimac_g3_grade("202606043", "국어", "화법과작문", raw)
+    check("화작 95→1·84→3·72→4·71→5",
+          g(95) == 1 and g(84) == 3 and g(72) == 4 and g(71) == 5,
+          f"{g(95)},{g(84)},{g(72)},{g(71)}")
+    # 수학 확통 1:91 → 91=1등급, 90=2등급
+    gm = lambda raw: mimac.mimac_g3_grade("202606043", "수학", "확률과통계", raw)
+    check("확통 91→1·90→2", gm(91) == 1 and gm(90) == 2, f"{gm(91)},{gm(90)}")
+
+
 # ── 9.5 서버 모드 보안 (프록시 뒤 인증 우회·무차별 대입 방어) ────
 def t95_proxy_security():
     print("[9.5] 서버 모드 보안 (프록시 인증 게이트)")
@@ -417,7 +437,7 @@ def main() -> int:
     web = "--web" in sys.argv
     for t in [t1_imports, t2_key_isolation, t3_history_g3, t4_consolidate_g3,
               t5_synth_g12, t6_edge, t65_simfixes, t7_calibrator, t8_report_layouts,
-              t9_grade_cuts, t95_proxy_security] + ([t10_web] if web else []):
+              t9_grade_cuts, t93_mimac, t95_proxy_security] + ([t10_web] if web else []):
         try:
             t()
         except Exception as exc:

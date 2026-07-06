@@ -26,6 +26,7 @@ import urllib3
 
 import ebsi_xip_keys as xip
 import grade_cuts as gcut
+import mimac_cuts as mimac
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -197,6 +198,15 @@ def register_exam(year: int, month: int, grade: int,
         fetch_cuts(ids)
         return _register_g12(irecord, papers, keys_dir, has_key, out, progress)
     fetch_cuts(None)   # 고3: 국수영한/사탐/과탐 고정 그룹
+
+    # 고3 국어·수학 원점수 등급컷은 EBSi 가 비공개('-') → 미맥에서 선택과목별로 보강
+    try:
+        mres = mimac.register_g3(irecord, year, month, keys_dir,
+                                 progress=lambda m: progress(m))
+        out["mimac"] = (f"국·수 {mres['electives']}선택과목 (시험일 {mres['date']})"
+                        if mres.get("ok") else f"실패: {mres.get('reason')}")
+    except Exception as exc:
+        out["mimac"] = f"미맥 수집 실패: {exc}"
 
     # ── 고3 ──
     env_cmd = dict(cwd=ROOT, text=True, encoding="utf-8", errors="replace",
