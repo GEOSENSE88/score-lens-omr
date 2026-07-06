@@ -421,6 +421,45 @@ def t95_proxy_security():
     check("프록시 인증 게이트·잠금·브랜딩", p.returncode == 0 and "OK" in p.stdout, p.stdout[-200:])
 
 
+def t96_results_edit():
+    print("[9.6] 결과 확인·수정 API (조회·답안수정 재채점·성명수정·다운로드 반영)")
+    code = (
+        "import web_app as w, time, io, openpyxl\n"
+        "c=w.app.test_client()\n"
+        "d={'grade':'1','exam_id':'202606041'}\n"
+        "import pathlib; s=pathlib.Path('work/synth_g12')\n"
+        "for subj,k in [('국어','korean'),('통합사회','social')]:\n"
+        "    d['pdf_'+k]=(open(s/('synth_%s.pdf'%subj),'rb'), subj+'.pdf')\n"
+        "d['names']=(open(s/'synth_names.csv','rb'),'names.csv')\n"
+        "rid=c.post('/api/score',data=d,content_type='multipart/form-data').get_json()['run_id']\n"
+        "for _ in range(90):\n"
+        "    time.sleep(2)\n"
+        "    if c.get('/api/job/'+rid).get_json()['status']=='done': break\n"
+        "res=c.get('/api/result/'+rid).get_json()\n"
+        "assert res['ok'] and res['has_tamgu'] and '국어' in res['subjects'], 'view'\n"
+        "assert any(t['과목']=='통합사회' for t in res['students'][0]['탐구']), 'tamgu view'\n"
+        "kor=res['students'][0]['subjects']['국어']; before=kor['원점수']\n"
+        "cc=next(x for x in kor['cells'] if x['ok']); wrong=(cc['정답']%5)+1\n"
+        "er=c.post('/api/result/%s/edit'%rid,json={'idx':0,'field':'answer','subject':'국어','q':cc['q'],'value':wrong}).get_json()\n"
+        "after=er['student']['subjects']['국어']['원점수']\n"
+        "assert er['ok'] and after<before, 'regrade drop %s->%s'%(before,after)\n"
+        "back=c.post('/api/result/%s/edit'%rid,json={'idx':0,'field':'answer','subject':'국어','q':cc['q'],'value':cc['정답']}).get_json()\n"
+        "assert back['student']['subjects']['국어']['원점수']==before, 'restore'\n"
+        "c.post('/api/result/%s/edit'%rid,json={'idx':0,'field':'이름','value':'검증학생X'})\n"
+        "rr=c.get('/download/%s/통합성적표_고1.xlsx'%rid)\n"
+        "wb=openpyxl.load_workbook(io.BytesIO(rr.data))\n"
+        "found=any((cell.value=='검증학생X') for ws in wb.worksheets for row in ws.iter_rows() for cell in row)\n"
+        "assert found, 'name not in workbook'\n"
+        "print('OK')\n")
+    import os
+    env = os.environ.copy()
+    env.update(PYTHONIOENCODING="utf-8", OMR_OPEN_ACCESS="1")
+    p = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env, text=True,
+                       encoding="utf-8", errors="replace",
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
+    check("결과 조회·수정·재채점·다운로드 반영", p.returncode == 0 and "OK" in p.stdout, p.stdout[-300:])
+
+
 # ── 10. 웹 e2e (옵션: 서버 실행 중일 때) ─────────────────────────
 def t10_web():
     print("[10] 웹 e2e (고1 6과목 → 통합성적표)")
@@ -471,7 +510,7 @@ def main() -> int:
     web = "--web" in sys.argv
     for t in [t1_imports, t2_key_isolation, t3_history_g3, t4_consolidate_g3,
               t5_synth_g12, t6_edge, t65_simfixes, t67_autorotate, t7_calibrator, t8_report_layouts,
-              t9_grade_cuts, t93_mimac, t95_proxy_security] + ([t10_web] if web else []):
+              t9_grade_cuts, t93_mimac, t95_proxy_security, t96_results_edit] + ([t10_web] if web else []):
         try:
             t()
         except Exception as exc:

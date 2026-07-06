@@ -136,7 +136,8 @@ def consolidate(args) -> list[dict]:
         score = row.get("점수")
         score = _clean_num(score) if str(score).replace(".", "").isdigit() else _clean_num(total)
         return dict(선택=subject, 공통원=score, 선택원="", 원점수=score,
-                    만점=_clean_num(row.get("만점") or 100), 정오=jeongo)
+                    만점=_clean_num(row.get("만점") or 100), 정오=jeongo,
+                    확인=row.get("확인필요", ""))
 
     # ── 국어: 점수표(고3, 원점수+선택과목) 또는 판독표(고1·2) 자동 감지
     for row in _read_csv(args.korean):
@@ -197,7 +198,7 @@ def consolidate(args) -> list[dict]:
             stu = row.get(str(q))
             stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
             jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": stu == ans[q]}
-        s["영어"] = dict(원점수=_num_score(score_col), 만점=_num_score(row.get("부분만점") or row.get("만점"), 100), 정오=jeongo)
+        s["영어"] = dict(원점수=_num_score(score_col), 만점=_num_score(row.get("부분만점") or row.get("만점"), 100), 정오=jeongo, 확인=row.get("확인필요", ""))
 
     # ── 한국사 (판독표)
     for row in _read_csv(args.history):
@@ -209,7 +210,7 @@ def consolidate(args) -> list[dict]:
             stu = row.get(str(q))
             stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
             jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": stu == ans[q]}
-        s["한국사"] = dict(원점수=_num_score(row.get("점수")), 만점=_num_score(row.get("만점"), 50), 정오=jeongo)
+        s["한국사"] = dict(원점수=_num_score(row.get("점수")), 만점=_num_score(row.get("만점"), 50), 정오=jeongo, 확인=row.get("확인필요", ""))
 
     # ── 탐구 (판독표): 제1·제2 선택
     for row in _read_csv(args.explore):
@@ -299,27 +300,86 @@ def _attach_estimates(students: list[dict], exam_id: str | None, keys_dir) -> di
     return cuts
 
 
+def build_students(grade: int, keys_dir="keys", korean=None, math=None,
+                   english=None, history=None, explore=None,
+                   social=None, science=None, exam_id=None) -> list[dict]:
+    """과목별 CSV → 학생 레코드 리스트 (편집 가능한 중간 상태). 예상등급까지 부착."""
+    from types import SimpleNamespace
+    args = SimpleNamespace(grade=grade, keys_dir=keys_dir, korean=korean, math=math,
+                           english=english, history=history, explore=explore,
+                           social=social, science=science, exam_id=exam_id)
+    students = consolidate(args)
+    _merge_integrated(args, students)   # 고1·2 통합사회/통합과학 → 탐구1/탐구2
+    students.sort(key=lambda s: (str(s.get("반", "")),
+                                 int(s["번호"]) if str(s.get("번호", "")).isdigit() else 0))
+    _attach_estimates(students, exam_id, keys_dir)
+    return students
+
+
+def regrade_student_subject(s: dict, subject: str, exam_id, keys_dir):
+    """편집 후 한 학생의 한 과목을 정오 dict 기준으로 재채점하고 예상등급 갱신."""
+    d = s.get(subject) if subject in ("국어", "수학", "영어", "한국사") else None
+    tam = None
+    if d is None:
+        for t in (s.get("탐구") or []):
+            if t.get("과목") == subject:
+                tam = t; d = t; break
+    if not d:
+        return
+    jeongo = d.get("정오", {})
+    total = 0.0
+    gong = sun = 0.0
+    for q, cell in jeongo.items():
+        ans = cell.get("답")
+        ok = (ans not in (0, -1, "", None)) and ans == cell.get("정답")
+        cell["ok"] = ok
+        pt = cell.get("배점", 0) or 0
+        if ok:
+            total += pt
+            if subject == "국어":
+                gong += pt if int(q) <= 34 else 0
+                sun += pt if int(q) > 34 else 0
+            elif subject == "수학":
+                gong += pt if int(q) <= 22 else 0
+                sun += pt if int(q) > 22 else 0
+    def _clean(v):
+        return int(v) if float(v).is_integer() else round(v, 1)
+    d["원점수"] = _clean(total)
+    if subject in ("국어", "수학"):
+        d["공통원"] = _clean(gong) if gong else ""
+        d["선택원"] = _clean(sun) if sun else ""
+    # 예상등급 갱신
+    cuts = gc.load_grade_cuts(exam_id, keys_dir) if exam_id else {}
+    est = gc.estimate(gc.find_subject_cut(cuts, subject), d.get("원점수"))
+    등급, 표점, 백분위 = est["등급"], est["표준점수"], est["백분위"]
+    if subject in ("국어", "수학") and 등급 in ("", None) and exam_id:
+        mg = mimac.mimac_g3_grade(exam_id, subject, d.get("선택", ""), d.get("원점수"), keys_dir)
+        if mg != "":
+            등급 = mg
+    d.update(예상등급=등급, 예상표준점수=표점, 예상백분위=백분위)
+
+
+def workbook_from_students(students, out, exam_id=None, exam_year=None, keys_dir="keys") -> Path:
+    """편집된 학생 레코드 → 통합 워크북."""
+    if not students:
+        raise RuntimeError("통합할 학생 데이터가 없습니다.")
+    cuts = gc.load_grade_cuts(exam_id, keys_dir) if exam_id else {}
+    return rx.build_workbook(students, out, exam_year=exam_year, cuts_by_subject=cuts)
+
+
 def consolidate_paths(grade: int, keys_dir="keys", korean=None, math=None,
                       english=None, history=None, explore=None,
                       social=None, science=None,
                       out="output/통합성적표.xlsx", exam_year=None,
                       exam_id=None) -> Path:
-    """프로그래매틱 진입점 (웹앱 등에서 사용). 과목별 CSV 경로 → 통합 워크북 경로."""
-    from types import SimpleNamespace
-    args = SimpleNamespace(grade=grade, keys_dir=keys_dir, korean=korean, math=math,
-                           english=english, history=history, explore=explore,
-                           social=social, science=science, exam_id=exam_id)
+    """과목별 CSV 경로 → 통합 워크북 경로 (학생생성+워크북 한 번에)."""
     if not exam_id:
-        print("⚠️ exam_id(--irecord) 미지정 — keys 폴더에 여러 시험이 있으면 "
-              "다른 시험의 정답키가 잡힐 수 있습니다. 시험 ID를 지정하세요.")
-    students = consolidate(args)
-    _merge_integrated(args, students)   # 고1·2 통합사회/통합과학 → 탐구1/탐구2
+        print("⚠️ exam_id(--irecord) 미지정 — 다른 시험 정답키가 잡힐 수 있습니다.")
+    students = build_students(grade, keys_dir, korean, math, english, history,
+                              explore, social, science, exam_id)
     if not students:
         raise RuntimeError("통합할 학생 데이터가 없습니다 (CSV 경로 확인).")
-    students.sort(key=lambda s: (str(s.get("반", "")),
-                                 int(s["번호"]) if str(s.get("번호", "")).isdigit() else 0))
-    cuts = _attach_estimates(students, exam_id, keys_dir)   # 예상 등급·표점·백분위
-    return rx.build_workbook(students, out, exam_year=exam_year, cuts_by_subject=cuts)
+    return workbook_from_students(students, out, exam_id, exam_year, keys_dir)
 
 
 def main() -> int:

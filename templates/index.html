@@ -286,6 +286,96 @@
   }
   footer .credit a{color:var(--primary-2);text-decoration:none}
   footer .credit a:hover{text-decoration:underline}
+
+  /* ── 결과 확인·수정 뷰 ─────────────────────────── */
+  .review{margin:6px 0 22px}
+  .review-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .review-head h3{font-size:15px;font-weight:800;color:var(--ink);letter-spacing:-.2px}
+  .review-head .rv-note{font-size:12px;color:var(--ink-soft)}
+  .review-head .rv-stale{
+    display:none;font-size:11.5px;font-weight:700;color:var(--accent);
+    background:#FFF1E8;border:1px solid #F7CBA9;border-radius:20px;padding:3px 11px;
+  }
+  .review-head .rv-stale.show{display:inline-block}
+  .rv-search{margin-left:auto;position:relative}
+  .rv-search input{
+    padding:8px 12px 8px 30px;border:1.5px solid var(--line);border-radius:9px;
+    font-size:13px;font-family:inherit;color:var(--ink);width:150px;
+  }
+  .rv-search input:focus{outline:none;border-color:var(--primary-2);box-shadow:0 0 0 3px var(--sky-soft)}
+  .rv-search::before{content:"🔍";position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.6}
+
+  .rv-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .rv-tab{
+    padding:8px 15px;border:1.5px solid var(--line);border-radius:20px;background:#fff;
+    font-size:13px;font-weight:700;color:var(--ink-soft);cursor:pointer;font-family:inherit;transition:all .13s;
+  }
+  .rv-tab:hover{border-color:var(--primary-2);color:var(--primary)}
+  .rv-tab.on{background:var(--primary);border-color:var(--primary);color:#fff}
+  .rv-tab .cnt{opacity:.65;font-weight:600;margin-left:4px}
+
+  .rv-table-wrap{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .rv-table{width:100%;border-collapse:collapse;font-size:13.5px}
+  .rv-table th{
+    background:var(--sky-soft);color:var(--primary);font-weight:700;font-size:12px;
+    text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  .rv-table td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .rv-table tr:last-child td{border-bottom:none}
+  .rv-table tbody tr.stu:hover{background:var(--sky-soft)}
+  .rv-table tr.flag td{background:#FFF7EF}
+  .rv-table tr.flag:hover td{background:#FFF1E4}
+  .rv-cell-edit{
+    width:100%;border:1px solid transparent;border-radius:6px;padding:5px 7px;
+    font-size:13.5px;font-family:inherit;color:var(--ink);background:transparent;
+  }
+  .rv-cell-edit:hover{border-color:var(--line);background:#fff}
+  .rv-cell-edit:focus{outline:none;border-color:var(--primary-2);background:#fff;box-shadow:0 0 0 3px var(--sky-soft)}
+  .rv-cell-edit.nm{font-weight:700;min-width:80px}
+  .rv-cell-edit.sm{width:52px;text-align:center}
+  .rv-score{font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+  .rv-score .mx{font-weight:600;color:#9AA7B0;font-size:12px}
+  .rv-grade{
+    display:inline-block;min-width:20px;text-align:center;font-weight:800;font-size:12px;
+    background:var(--success-soft);color:var(--success);border-radius:6px;padding:2px 7px;
+  }
+  .rv-grade.none{background:#F1F4F6;color:#9AA7B0}
+  .rv-flag-badge{
+    font-size:11px;font-weight:700;color:var(--accent);background:#FFF1E8;
+    border:1px solid #F7CBA9;border-radius:20px;padding:2px 9px;white-space:nowrap;
+  }
+  .rv-toggle{
+    border:1.5px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:8px;
+    padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;
+  }
+  .rv-toggle:hover{border-color:var(--primary-2);color:var(--primary)}
+  .rv-toggle.open{background:var(--primary);border-color:var(--primary);color:#fff}
+
+  .rv-detail td{background:#FBFCFD;padding:0}
+  .rv-detail-inner{padding:14px 16px}
+  .rv-legend{font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap}
+  .rv-legend span{display:inline-flex;align-items:center;gap:5px}
+  .rv-swatch{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .rv-grid{display:flex;flex-wrap:wrap;gap:6px}
+  .rv-q{
+    position:relative;width:46px;border:1.5px solid var(--line);border-radius:8px;
+    padding:4px 0 5px;text-align:center;cursor:pointer;background:#fff;transition:all .1s;
+  }
+  .rv-q:hover{border-color:var(--primary-2);box-shadow:0 0 0 2px var(--sky-soft)}
+  .rv-q .qn{display:block;font-size:9.5px;color:#9AA7B0;font-weight:700;line-height:1.2}
+  .rv-q .qa{display:block;font-size:15px;font-weight:800;line-height:1.25}
+  .rv-q.ok{background:var(--success-soft);border-color:#B6E6D4}
+  .rv-q.ok .qa{color:var(--success)}
+  .rv-q.wrong{background:var(--danger-soft);border-color:#F2C5C4}
+  .rv-q.wrong .qa{color:var(--danger)}
+  .rv-q.blank{background:#F1F4F6}
+  .rv-q.blank .qa{color:#9AA7B0}
+  .rv-q .qc{display:block;font-size:9px;color:#9AA7B0;line-height:1.2;min-height:11px}
+  .rv-q.wrong .qc{color:var(--danger)}
+  .rv-q select{
+    position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px;
+  }
+  .rv-empty{padding:26px;text-align:center;color:var(--ink-soft);font-size:13px}
 </style>
 </head>
 <body>
@@ -391,6 +481,16 @@
       <div class="step-num" style="background:var(--success)">✓</div>
       <h2>채점 완료 — 결과 내려받기</h2>
     </div>
+    <div class="review" id="reviewSlot" style="display:none">
+      <div class="review-head">
+        <h3>채점 결과 확인·수정</h3>
+        <span class="rv-note">답안을 눌러 마킹·리딩 오류를 고치면 점수와 예상등급이 즉시 반영됩니다.</span>
+        <span class="rv-stale" id="rvStale">수정됨 · 아래에서 새로 내려받으면 반영</span>
+        <div class="rv-search"><input type="text" id="rvSearch" placeholder="성명·반 검색" autocomplete="off"></div>
+      </div>
+      <div class="rv-tabs" id="rvTabs"></div>
+      <div class="rv-table-wrap"><table class="rv-table"><tbody id="rvBody"></tbody></table></div>
+    </div>
     <div id="heroSlot"></div>
     <div class="dl-list" id="dlList"></div>
     <div class="result-actions">
@@ -414,6 +514,7 @@ let grade = 3;
 let pollTimer = null;
 
 const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
 const grid = $("#subjectGrid");
 const files = {};   // key -> File
 
@@ -651,8 +752,149 @@ function renderResult(j){
       <div class="ic">XLS</div>
       <div><div class="nm">${d.title}</div><div class="sz">${(d.size/1024).toFixed(0)} KB</div></div>
     </a>`).join("");
+  if (j.status === "done" && j.run_id) loadReview(j.run_id);
   panel.scrollIntoView({behavior:"smooth"});
 }
+
+// ── 결과 확인·수정 뷰 ──────────────────────────────
+let RESULT = null, RUN_ID = null, curSubject = null, expanded = new Set();
+const ANS_LABEL = {0:"·", "-1":"중복", 1:"1", 2:"2", 3:"3", 4:"4", 5:"5"};
+
+async function loadReview(runId){
+  RUN_ID = runId;
+  try{
+    const r = await (await fetch(`/api/result/${runId}`)).json();
+    if (!r.ok){ $("#reviewSlot").style.display = "none"; return; }
+    RESULT = r; expanded = new Set();
+    $("#rvStale").classList.toggle("show", !!r.stale);
+    buildTabs();
+    $("#reviewSlot").style.display = "block";
+  }catch(e){ $("#reviewSlot").style.display = "none"; }
+}
+
+function tabList(){
+  const tabs = RESULT.subjects.slice();
+  if (RESULT.has_tamgu){
+    const seen = new Set();
+    RESULT.students.forEach(s => (s.탐구||[]).forEach(t => {
+      if (t.과목 && !tabs.includes(t.과목) && !seen.has(t.과목)){ seen.add(t.과목); tabs.push(t.과목); }
+    }));
+  }
+  return tabs;
+}
+
+function subjData(stu, subj){
+  if (stu.subjects && stu.subjects[subj]) return stu.subjects[subj];
+  return (stu.탐구||[]).find(t => t.과목 === subj) || null;
+}
+
+function buildTabs(){
+  const tabs = tabList();
+  if (!curSubject || !tabs.includes(curSubject)) curSubject = tabs[0] || null;
+  $("#rvTabs").innerHTML = tabs.map(t => {
+    const n = RESULT.students.filter(s => subjData(s, t)).length;
+    return `<button class="rv-tab ${t===curSubject?'on':''}" data-subj="${t}">${t}<span class="cnt">${n}</span></button>`;
+  }).join("");
+  $$("#rvTabs .rv-tab").forEach(b => b.addEventListener("click", () => {
+    curSubject = b.dataset.subj; expanded = new Set(); buildTabs(); renderTable();
+  }));
+  renderTable();
+}
+
+function renderTable(){
+  const q = ($("#rvSearch").value || "").trim().toLowerCase();
+  const body = $("#rvBody");
+  const rows = RESULT.students
+    .map((s, idx) => ({s, idx}))
+    .filter(({s}) => subjData(s, curSubject))
+    .filter(({s}) => !q || (`${s.이름} ${s.반} ${s.번호}`).toLowerCase().includes(q));
+  const header = `<tr>
+    <th>반</th><th>번호</th><th>성명</th><th>원점수</th><th>예상등급</th><th>상태</th><th></th></tr>`;
+  if (!rows.length){
+    body.innerHTML = header + `<tr><td colspan="7"><div class="rv-empty">해당 학생이 없습니다.</div></td></tr>`;
+    return;
+  }
+  body.innerHTML = header + rows.map(({s, idx}) => rowHtml(s, idx)).join("");
+  // 이름·반·번호 편집
+  $$("#rvBody .rv-cell-edit").forEach(inp => {
+    inp.addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); inp.blur(); }});
+    inp.addEventListener("change", () => saveField(+inp.dataset.idx, inp.dataset.field, inp.value));
+  });
+  // 답안 보기/수정 토글
+  $$("#rvBody .rv-toggle").forEach(btn => btn.addEventListener("click", () => {
+    const idx = +btn.dataset.idx;
+    if (expanded.has(idx)) expanded.delete(idx); else expanded.add(idx);
+    renderTable();
+  }));
+  bindGrid();
+}
+
+function rowHtml(s, idx){
+  const d = subjData(s, curSubject);
+  const flag = (d.확인 || "").toString().trim();
+  const gr = d.예상등급 ? `${d.예상등급}등급` : "";
+  const open = expanded.has(idx);
+  let html = `<tr class="stu ${flag?'flag':''}">
+    <td><input class="rv-cell-edit sm" data-idx="${idx}" data-field="반" value="${esc(s.반)}"></td>
+    <td><input class="rv-cell-edit sm" data-idx="${idx}" data-field="번호" value="${esc(s.번호)}"></td>
+    <td><input class="rv-cell-edit nm" data-idx="${idx}" data-field="이름" value="${esc(s.이름)}"></td>
+    <td><span class="rv-score">${d.원점수}<span class="mx"> / ${d.만점}</span></span></td>
+    <td>${gr ? `<span class="rv-grade">${gr}</span>` : `<span class="rv-grade none">–</span>`}</td>
+    <td>${flag ? `<span class="rv-flag-badge">⚠ ${esc(flag)}</span>` : ""}</td>
+    <td style="text-align:right"><button class="rv-toggle ${open?'open':''}" data-idx="${idx}">답안 ${open?'닫기':'보기·수정'}</button></td>
+  </tr>`;
+  if (open) html += `<tr class="rv-detail"><td colspan="7"><div class="rv-detail-inner">
+      <div class="rv-legend">
+        <span><i class="rv-swatch" style="background:var(--success-soft);border:1px solid #B6E6D4"></i>정답</span>
+        <span><i class="rv-swatch" style="background:var(--danger-soft);border:1px solid #F2C5C4"></i>오답(작은 숫자=정답)</span>
+        <span><i class="rv-swatch" style="background:#F1F4F6"></i>미마킹 ·  ·  ·  큰 숫자 = 학생이 마킹한 답 · 눌러서 수정</span>
+      </div>
+      <div class="rv-grid">${d.cells.map(c => qHtml(idx, c)).join("")}</div>
+    </div></td></tr>`;
+  return html;
+}
+
+function qHtml(idx, c){
+  const a = c.답;
+  const cls = c.ok ? "ok" : (a === 0 || a === -1 ? "blank" : "wrong");
+  const shown = ANS_LABEL[a] !== undefined ? ANS_LABEL[a] : (a ?? "·");
+  const corr = !c.ok ? `<span class="qc">${c.정답 ?? ""}</span>` : `<span class="qc"></span>`;
+  const opts = [["0","·"],["1","1"],["2","2"],["3","3"],["4","4"],["5","5"],["-1","중복"]]
+    .map(([v,l]) => `<option value="${v}" ${String(a)===v?"selected":""}>${l}</option>`).join("");
+  return `<div class="rv-q ${cls}">
+    <span class="qn">${c.q}</span><span class="qa">${shown}</span>${corr}
+    <select data-idx="${idx}" data-q="${c.q}">${opts}</select>
+  </div>`;
+}
+
+function bindGrid(){
+  $$("#rvBody .rv-q select").forEach(sel => sel.addEventListener("change", () =>
+    saveAnswer(+sel.dataset.idx, +sel.dataset.q, +sel.value)));
+}
+
+async function postEdit(payload){
+  const r = await (await fetch(`/api/result/${RUN_ID}/edit`, {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+  })).json();
+  if (!r.ok){ showAlert(r.message || "수정에 실패했습니다."); return null; }
+  RESULT.students[payload.idx] = r.student;
+  $("#rvStale").classList.add("show");
+  return r.student;
+}
+
+async function saveField(idx, field, value){
+  const st = await postEdit({idx, field, value});
+  if (st){ buildTabs(); }   // 이름·반 변경은 검색/카운트에 영향 → 갱신
+}
+
+async function saveAnswer(idx, q, value){
+  const st = await postEdit({idx, field:"answer", subject:curSubject, q, value});
+  if (st) renderTable();     // 점수·정오 즉시 반영(펼침 유지)
+}
+
+function esc(v){ return String(v ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+$("#rvSearch").addEventListener("input", () => renderTable());
 
 $("#btnReset").addEventListener("click", () => location.reload());
 

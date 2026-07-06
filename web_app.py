@@ -67,6 +67,61 @@ if BEHIND_PROXY:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 JOBS: dict[str, dict] = {}
+RESULTS: dict[str, dict] = {}   # run_id → 편집 가능한 채점 결과(학생 레코드)
+
+
+def _rebuild_workbook(run_id: str) -> None:
+    """RESULTS 의 (편집된) 학생 상태로 통합성적표를 다시 만든다."""
+    r = RESULTS.get(run_id)
+    if not r:
+        return
+    cons.workbook_from_students(r["students"], r["out"], exam_id=r.get("exam_id"),
+                                exam_year=r.get("exam_year"), keys_dir=str(ROOT / "keys"))
+    r["stale"] = False
+
+
+# 결과 뷰용 과목 순서·라벨
+_RESULT_SUBJECTS = ["국어", "수학", "영어", "한국사", "통합사회", "통합과학"]
+
+
+def _serialize_results(run_id: str) -> dict:
+    """UI 결과 뷰용 JSON: 과목별 학생 표 + 문항별 정오."""
+    r = RESULTS.get(run_id)
+    if not r:
+        return {}
+    students = r["students"]
+    # 어떤 과목이 존재하는가
+    present = []
+    for subj in _RESULT_SUBJECTS:
+        if any(s.get(subj) for s in students):
+            present.append(subj)
+    # 탐구(고3): 과목명이 학생마다 다름 → '탐구1/탐구2' 슬롯으로
+    has_tamgu = any(s.get("탐구") for s in students)
+    rows = []
+    for i, s in enumerate(students):
+        row = {"idx": i, "반": s.get("반", ""), "번호": s.get("번호", ""),
+               "이름": s.get("이름", ""), "subjects": {}}
+        for subj in present:
+            d = s.get(subj)
+            if d:
+                row["subjects"][subj] = _subj_cells(d)
+        if has_tamgu:
+            row["탐구"] = [dict(과목=t.get("과목", ""), **_subj_cells(t))
+                          for t in (s.get("탐구") or [])]
+        rows.append(row)
+    return dict(grade=r["grade"], subjects=present, has_tamgu=has_tamgu,
+                stale=r.get("stale", False), students=rows)
+
+
+def _subj_cells(d: dict) -> dict:
+    jeongo = d.get("정오", {})
+    cells = []
+    for q in sorted(jeongo, key=lambda x: int(x)):
+        c = jeongo[q]
+        cells.append(dict(q=int(q), 답=c.get("답"), 정답=c.get("정답"), ok=bool(c.get("ok"))))
+    return dict(원점수=d.get("원점수", ""), 만점=d.get("만점", ""),
+                선택=d.get("선택", ""), 확인=d.get("확인", ""),
+                예상등급=d.get("예상등급", ""), cells=cells)
 
 
 # ── 인증: 세션 비밀키 + 접속 코드 ─────────────────────────────────
@@ -422,13 +477,12 @@ def process_job(job_id: str, run_output_dir: Path, grade: int,
                 append_event(job_id, "국어 점수표의 성명을 나머지 과목에 자동 연결합니다.")
             append_event(job_id, f"{spec['label']}: 채점 완료 ✓", kind="ok")
 
-        # 통합성적표 (대교협 + UNIV + 정오표)
+        # 통합성적표 (대교협 + UNIV + 정오표) — 편집 가능한 학생 상태로 보관
         combined_ok = False
         if csv_by_kind:
-            append_event(job_id, "통합성적표(대교협·UNIV·정오표)를 만드는 중…", kind="run")
+            append_event(job_id, "결과를 정리하고 통합성적표를 만드는 중…", kind="run")
             try:
-                out = run_output_dir / f"통합성적표_고{grade}.xlsx"
-                cons.consolidate_paths(
+                students = cons.build_students(
                     grade, keys_dir=str(ROOT / "keys"),
                     korean=csv_by_kind.get("korean") or csv_by_kind.get("korean_obj"),
                     math=csv_by_kind.get("math"),
@@ -437,8 +491,12 @@ def process_job(job_id: str, run_output_dir: Path, grade: int,
                     explore=csv_by_kind.get("explore"),
                     social=csv_by_kind.get("social"),
                     science=csv_by_kind.get("science"),
-                    out=out, exam_year=exam_year or None,
-                    exam_id=exam_id)   # ⚠️ keys 에 여러 시험 공존 — 키 혼선 방지
+                    exam_id=exam_id)
+                RESULTS[job_id] = dict(grade=grade, exam_id=exam_id,
+                                       exam_year=exam_year or None, students=students,
+                                       out=str(run_output_dir / f"통합성적표_고{grade}.xlsx"),
+                                       stale=False)
+                _rebuild_workbook(job_id)
                 combined_ok = True
                 append_event(job_id, "통합성적표 생성 완료 ✓", kind="ok")
             except Exception as exc:
@@ -591,6 +649,55 @@ def api_job(run_id: str):
     return jsonify(job)
 
 
+@app.get("/api/result/<run_id>")
+def api_result(run_id: str):
+    if run_id not in RESULTS:
+        return jsonify(ok=False, message="결과를 찾을 수 없습니다(만료되었을 수 있음)."), 404
+    return jsonify(ok=True, **_serialize_results(run_id))
+
+
+@app.post("/api/result/<run_id>/edit")
+def api_result_edit(run_id: str):
+    """학생 결과 수정. body: {idx, field, value[, subject, q]}.
+    field ∈ {이름, 반, 번호, answer(과목·문항 답 수정)}."""
+    r = RESULTS.get(run_id)
+    if not r:
+        return jsonify(ok=False, message="결과를 찾을 수 없습니다."), 404
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        idx = int(body.get("idx"))
+        s = r["students"][idx]
+    except (TypeError, ValueError, IndexError):
+        return jsonify(ok=False, message="학생을 찾을 수 없습니다."), 400
+    field = body.get("field")
+    if field in ("이름", "반", "번호"):
+        s[field] = str(body.get("value", "")).strip()
+    elif field == "answer":
+        subject = body.get("subject")
+        # 과목 데이터 찾기 (탐구는 과목명으로)
+        d = s.get(subject) if subject in ("국어", "수학", "영어", "한국사", "통합사회", "통합과학") else None
+        if d is None:
+            for t in (s.get("탐구") or []):
+                if t.get("과목") == subject:
+                    d = t; break
+        if not d:
+            return jsonify(ok=False, message="과목을 찾을 수 없습니다."), 400
+        try:
+            q = int(body.get("q"))
+            val = int(body.get("value"))          # 0=미마킹, 1~5=답, -1=중복
+        except (TypeError, ValueError):
+            return jsonify(ok=False, message="문항/답 값을 확인하세요."), 400
+        cell = d.get("정오", {}).get(q) or d.get("정오", {}).get(str(q))
+        if not cell:
+            return jsonify(ok=False, message="문항을 찾을 수 없습니다."), 400
+        cell["답"] = val
+        cons.regrade_student_subject(s, subject, r.get("exam_id"), str(ROOT / "keys"))
+    else:
+        return jsonify(ok=False, message="지원하지 않는 수정입니다."), 400
+    r["stale"] = True                             # 다운로드 시 재생성
+    return jsonify(ok=True, student=_serialize_results(run_id)["students"][idx])
+
+
 @app.get("/download/<run_id>/<path:relpath>")
 def download_file(run_id: str, relpath: str):
     # run_id 는 uuid4().hex[:12] 형태 — 경로 조작 방지를 위해 형식부터 검증
@@ -600,6 +707,12 @@ def download_file(run_id: str, relpath: str):
     path = (run_dir / relpath).resolve()
     if run_dir not in path.parents and path != run_dir:
         abort(403)
+    # 통합성적표 다운로드 전에 편집사항이 있으면 최신 상태로 다시 만든다
+    if path.name.startswith("통합성적표") and RESULTS.get(run_id, {}).get("stale"):
+        try:
+            _rebuild_workbook(run_id)
+        except Exception:
+            pass
     if not path.exists() or not path.is_file():
         abort(404)
     # 서버 무흔적: 서버 모드에서 통합성적표(모든 결과 포함)를 내려받으면
@@ -610,6 +723,7 @@ def download_file(run_id: str, relpath: str):
             shutil.rmtree(run_dir, ignore_errors=True)
             shutil.rmtree(UPLOAD_ROOT / run_id, ignore_errors=True)
             JOBS.pop(run_id, None)
+            RESULTS.pop(run_id, None)
         threading.Timer(20.0, _wipe_run).start()
     return send_file(path, as_attachment=True)
 
