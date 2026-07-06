@@ -59,10 +59,21 @@
   }
   @keyframes logoIn{from{opacity:0;transform:translateY(6px) scale(.94)}to{opacity:1;transform:none}}
   .brand-text{min-width:0}
+  .brand-title{
+    font-size:23px;font-weight:800;color:#fff;letter-spacing:-.3px;line-height:1.1;
+    display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+    text-shadow:0 1px 3px rgba(0,0,0,.25);
+  }
+  .brand-title .bt-sub{font-size:14px;font-weight:600;color:#BBE1FA;letter-spacing:0}
   .brand p{
-    font-size:14px;color:#EAF6FF;font-weight:500;line-height:1.5;
+    font-size:14px;color:#EAF6FF;font-weight:500;line-height:1.5;margin-top:5px;
     text-shadow:0 1px 2px rgba(0,0,0,.15);
   }
+  .brand-credit{
+    font-size:11.5px;color:#A7C7DE;font-weight:500;margin-top:7px;
+  }
+  .brand-credit a{color:#BBE1FA;text-decoration:none}
+  .brand-credit a:hover{text-decoration:underline}
   .brand p .hl{color:#FBDE37;font-weight:800}          /* 자동 채점 */
   .brand p .hl2{color:#8CE6C0;font-weight:800}         /* 성적표 */
   .brand p .arrow{color:var(--sky);font-weight:800;margin:0 3px}
@@ -77,6 +88,7 @@
   @keyframes twinkle{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1.1)}}
   @media(max-width:560px){
     .brand-logo{height:62px}.brand p{font-size:12.5px}
+    .brand-title{font-size:18px}.brand-title .bt-sub{font-size:11.5px}
     .spark.s1,.spark.s2{display:none}
   }
   .share-badge{
@@ -208,7 +220,18 @@
   .go-summary{font-size:13px;color:var(--ink-soft);white-space:nowrap}
 
   /* ── 진행 패널 ─────────────────────────── */
-  #panel-progress{display:none}
+  #panel-scan{display:none}
+  #panel-grade{display:none}
+  .grade-box{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .grade-msg{flex:1;min-width:220px;font-size:13.5px;color:var(--ink-soft);line-height:1.5}
+  #btnGrade{flex:0 0 auto;min-width:200px}
+  .rv-status{font-size:12px;font-weight:700}
+  .rv-status.ok{color:var(--success)}
+  .rv-status.warn{color:var(--accent)}
+  .sum-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px}
+  .sum-stat{background:var(--sky-soft);border-radius:11px;padding:12px 14px}
+  .sum-stat .lb{font-size:11.5px;color:var(--primary);font-weight:700}
+  .sum-stat .vl{font-size:20px;font-weight:800;color:var(--ink);margin-top:2px;font-variant-numeric:tabular-nums}
   .prog-track{height:10px;background:#EDF1F4;border-radius:6px;overflow:hidden;margin:6px 0 16px}
   .prog-fill{
     height:100%;width:0%;border-radius:6px;transition:width .5s ease;
@@ -388,7 +411,9 @@
     <div class="brand">
       <img class="brand-logo" src="{{ url_for('static', filename='omr-lens-logo.png') }}" alt="OMR Lens — 모의고사 OMR 스캔·채점">
       <div class="brand-text">
-        <p>모의고사 OMR 답안지를 스캔하면 <span class="hl">자동 채점</span><span class="arrow">→</span>대교협·UNIV <span class="hl2">성적표</span>와 정오표까지</p>
+        <h1 class="brand-title">OMR Lens<span class="bt-sub">모의고사 OMR 자동 채점</span></h1>
+        <p>OMR 답안지를 스캔하면 <span class="hl">자동 채점</span><span class="arrow">→</span>대교협·UNIV <span class="hl2">성적표</span>와 정오표까지</p>
+        <div class="brand-credit">제작 · 산남고등학교 이성훈 · <a href="mailto:ming0987@naver.com">ming0987@naver.com</a></div>
       </div>
       {% if share %}
       <div class="share-badge" title="같은 학교망의 동료에게 이 주소와 코드를 알려주세요">
@@ -459,37 +484,57 @@
 
     <!-- 실행 -->
     <div class="go-bar">
-      <button type="submit" class="btn-go" id="btnGo" disabled>채점 시작</button>
+      <button type="submit" class="btn-go" id="btnGo" disabled>답안지 스캔 시작</button>
       <span class="go-summary" id="goSummary">업로드된 과목 없음</span>
     </div>
   </form>
 
-  <!-- STEP 3: 진행 -->
-  <section class="card" id="panel-progress">
+  <!-- STEP 3: 답안지 스캔 · 오류 사항 검토 -->
+  <section class="card" id="panel-scan">
     <div class="step-head">
       <div class="step-num">3</div>
-      <h2>채점 진행</h2>
+      <h2>답안지 스캔 · 오류 사항 검토</h2>
+      <span class="hint" id="scanHint">답안지를 판독하는 중…</span>
     </div>
     <div class="prog-label"><span id="progText">준비 중…</span><span id="progPct">0%</span></div>
     <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
     <div class="timeline" id="timeline"></div>
-  </section>
 
-  <!-- 결과 -->
-  <section class="card" id="panel-result">
-    <div class="step-head">
-      <div class="step-num" style="background:var(--success)">✓</div>
-      <h2>채점 완료 — 결과 내려받기</h2>
-    </div>
     <div class="review" id="reviewSlot" style="display:none">
       <div class="review-head">
-        <h3>채점 결과 확인·수정</h3>
-        <span class="rv-note">답안을 눌러 마킹·리딩 오류를 고치면 점수와 예상등급이 즉시 반영됩니다.</span>
-        <span class="rv-stale" id="rvStale">수정됨 · 아래에서 새로 내려받으면 반영</span>
+        <h3>판독 결과 검토</h3>
+        <span class="rv-note">잘못 마킹됐거나 판독 오류가 있으면 답안을 눌러 고치세요. <b>확인 필요</b> 학생부터 살펴보세요.</span>
+        <span class="rv-stale" id="rvStale">수정됨 · 채점에 반영됩니다</span>
         <div class="rv-search"><input type="text" id="rvSearch" placeholder="성명·반 검색" autocomplete="off"></div>
       </div>
       <div class="rv-tabs" id="rvTabs"></div>
       <div class="rv-table-wrap"><table class="rv-table"><tbody id="rvBody"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- STEP 4: 채점 -->
+  <section class="card" id="panel-grade">
+    <div class="step-head">
+      <div class="step-num">4</div>
+      <h2>채점</h2>
+      <span class="hint">판독 검토를 마쳤으면 채점하세요</span>
+    </div>
+    <div class="grade-box">
+      <div class="grade-msg" id="gradeMsg">위 판독 결과를 확인·수정한 뒤 채점하면 원점수·예상등급이 산출됩니다.</div>
+      <button type="button" class="btn-go" id="btnGrade">채점하기</button>
+    </div>
+  </section>
+
+  <!-- STEP 5: 채점 결과 확인 · 다운로드 -->
+  <section class="card" id="panel-result">
+    <div class="step-head">
+      <div class="step-num" style="background:var(--success)">5</div>
+      <h2>채점 결과 확인 · 다운로드</h2>
+    </div>
+    <div class="summary" id="summarySlot" style="display:none">
+      <div class="rv-tabs" id="sumTabs"></div>
+      <div class="sum-stats" id="sumStats"></div>
+      <div class="rv-table-wrap"><table class="rv-table"><tbody id="sumBody"></tbody></table></div>
     </div>
     <div id="heroSlot"></div>
     <div class="dl-list" id="dlList"></div>
@@ -668,7 +713,7 @@ function updateGo(){
   const n = Object.keys(files).length;
   $("#btnGo").disabled = n === 0;
   const labels = (CATALOG[grade]||[]).filter(s => files[s.key]).map(s => s.label);
-  $("#goSummary").textContent = n ? `${labels.join(" · ")} — ${n}과목 채점` : "업로드된 과목 없음";
+  $("#goSummary").textContent = n ? `${labels.join(" · ")} — ${n}과목 스캔` : "업로드된 과목 없음";
 }
 
 function showAlert(msg){
@@ -695,14 +740,14 @@ $("#form").addEventListener("submit", async e => {
     const res = await fetch("/api/score", {method:"POST", body:data});
     const j = await res.json();
     if (!j.ok){ throw new Error(j.message || "요청 실패"); }
-    $("#btnGo").textContent = "채점 진행 중…";
-    $("#panel-progress").style.display = "block";
-    $("#panel-progress").scrollIntoView({behavior:"smooth"});
+    $("#btnGo").textContent = "스캔 진행 중…";
+    $("#panel-scan").style.display = "block";
+    $("#panel-scan").scrollIntoView({behavior:"smooth"});
     poll(j.status_url);
   }catch(err){
     showAlert(err.message);
     $("#btnGo").disabled = false;
-    $("#btnGo").textContent = "채점 시작";
+    $("#btnGo").textContent = "답안지 스캔 시작";
   }
 });
 
@@ -714,7 +759,7 @@ function poll(url){
       renderProgress(j);
       if (j.status === "done" || j.status === "error"){
         clearInterval(pollTimer);
-        renderResult(j);
+        onScanDone(j);
       }
     }catch(e){ /* 서버 일시 오류 — 다음 폴링에서 재시도 */ }
   }, 1200);
@@ -732,10 +777,22 @@ function renderProgress(j){
   tl.scrollTop = tl.scrollHeight;
 }
 
-function renderResult(j){
-  $("#btnGo").textContent = "채점 시작";
-  const panel = $("#panel-result");
-  panel.style.display = "block";
+// ── STEP 3 완료: 스캔 결과를 검토 뷰로 ──────────────
+function onScanDone(j){
+  $("#btnGo").disabled = false;
+  $("#btnGo").textContent = "답안지 스캔 시작";
+  SCAN_JOB = j;
+  if (j.status === "error"){
+    $("#scanHint").textContent = "스캔 오류";
+    showAlert(j.message || "스캔 중 오류가 발생했습니다.");
+    return;
+  }
+  $("#scanHint").textContent = "판독 완료 — 아래에서 검토하세요";
+  if (j.run_id) loadReview(j.run_id);
+}
+
+// ── STEP 5: 다운로드 카드 ──────────────────────────
+function renderDownloads(j){
   const combined = (j.downloads || []).find(d => d.kind === "combined");
   const others = (j.downloads || []).filter(d => d.kind !== "combined");
   $("#heroSlot").innerHTML = combined ? `
@@ -752,12 +809,11 @@ function renderResult(j){
       <div class="ic">XLS</div>
       <div><div class="nm">${d.title}</div><div class="sz">${(d.size/1024).toFixed(0)} KB</div></div>
     </a>`).join("");
-  if (j.status === "done" && j.run_id) loadReview(j.run_id);
-  panel.scrollIntoView({behavior:"smooth"});
 }
 
 // ── 결과 확인·수정 뷰 ──────────────────────────────
 let RESULT = null, RUN_ID = null, curSubject = null, expanded = new Set();
+let SCAN_JOB = null, curSum = null, GRADED = false;
 const ANS_LABEL = {0:"·", "-1":"중복", 1:"1", 2:"2", 3:"3", 4:"4", 5:"5"};
 
 async function loadReview(runId){
@@ -769,6 +825,8 @@ async function loadReview(runId){
     $("#rvStale").classList.toggle("show", !!r.stale);
     buildTabs();
     $("#reviewSlot").style.display = "block";
+    $("#panel-grade").style.display = "block";     // STEP 4 노출
+    $("#panel-scan").scrollIntoView({behavior:"smooth"});
   }catch(e){ $("#reviewSlot").style.display = "none"; }
 }
 
@@ -809,9 +867,9 @@ function renderTable(){
     .filter(({s}) => subjData(s, curSubject))
     .filter(({s}) => !q || (`${s.이름} ${s.반} ${s.번호}`).toLowerCase().includes(q));
   const header = `<tr>
-    <th>반</th><th>번호</th><th>성명</th><th>원점수</th><th>예상등급</th><th>상태</th><th></th></tr>`;
+    <th>반</th><th>번호</th><th>성명</th><th>판독 상태</th><th></th></tr>`;
   if (!rows.length){
-    body.innerHTML = header + `<tr><td colspan="7"><div class="rv-empty">해당 학생이 없습니다.</div></td></tr>`;
+    body.innerHTML = header + `<tr><td colspan="5"><div class="rv-empty">해당 학생이 없습니다.</div></td></tr>`;
     return;
   }
   body.innerHTML = header + rows.map(({s, idx}) => rowHtml(s, idx)).join("");
@@ -829,25 +887,37 @@ function renderTable(){
   bindGrid();
 }
 
+function readStatus(d){
+  const flag = (d.확인 || "").toString().trim();
+  if (flag) return {flag:true, html:`<span class="rv-flag-badge">⚠ ${esc(flag)}</span>`};
+  let blank = 0, dup = 0;
+  (d.cells || []).forEach(c => { if (c.답 === 0) blank++; else if (c.답 === -1) dup++; });
+  if (blank || dup){
+    const parts = [];
+    if (blank) parts.push(`미마킹 ${blank}`);
+    if (dup) parts.push(`중복 ${dup}`);
+    return {flag:false, html:`<span class="rv-status warn">${parts.join(" · ")}</span>`};
+  }
+  return {flag:false, html:`<span class="rv-status ok">정상</span>`};
+}
+
 function rowHtml(s, idx){
   const d = subjData(s, curSubject);
-  const flag = (d.확인 || "").toString().trim();
-  const gr = d.예상등급 ? `${d.예상등급}등급` : "";
+  const stt = readStatus(d);
   const open = expanded.has(idx);
-  let html = `<tr class="stu ${flag?'flag':''}">
+  let html = `<tr class="stu ${stt.flag?'flag':''}">
     <td><input class="rv-cell-edit sm" data-idx="${idx}" data-field="반" value="${esc(s.반)}"></td>
     <td><input class="rv-cell-edit sm" data-idx="${idx}" data-field="번호" value="${esc(s.번호)}"></td>
     <td><input class="rv-cell-edit nm" data-idx="${idx}" data-field="이름" value="${esc(s.이름)}"></td>
-    <td><span class="rv-score">${d.원점수}<span class="mx"> / ${d.만점}</span></span></td>
-    <td>${gr ? `<span class="rv-grade">${gr}</span>` : `<span class="rv-grade none">–</span>`}</td>
-    <td>${flag ? `<span class="rv-flag-badge">⚠ ${esc(flag)}</span>` : ""}</td>
+    <td>${stt.html}</td>
     <td style="text-align:right"><button class="rv-toggle ${open?'open':''}" data-idx="${idx}">답안 ${open?'닫기':'보기·수정'}</button></td>
   </tr>`;
-  if (open) html += `<tr class="rv-detail"><td colspan="7"><div class="rv-detail-inner">
+  if (open) html += `<tr class="rv-detail"><td colspan="5"><div class="rv-detail-inner">
       <div class="rv-legend">
         <span><i class="rv-swatch" style="background:var(--success-soft);border:1px solid #B6E6D4"></i>정답</span>
         <span><i class="rv-swatch" style="background:var(--danger-soft);border:1px solid #F2C5C4"></i>오답(작은 숫자=정답)</span>
-        <span><i class="rv-swatch" style="background:#F1F4F6"></i>미마킹 ·  ·  ·  큰 숫자 = 학생이 마킹한 답 · 눌러서 수정</span>
+        <span><i class="rv-swatch" style="background:#F1F4F6"></i>미마킹</span>
+        <span>큰 숫자 = 학생이 마킹한 답 · 눌러서 수정</span>
       </div>
       <div class="rv-grid">${d.cells.map(c => qHtml(idx, c)).join("")}</div>
     </div></td></tr>`;
@@ -884,17 +954,61 @@ async function postEdit(payload){
 
 async function saveField(idx, field, value){
   const st = await postEdit({idx, field, value});
-  if (st){ buildTabs(); }   // 이름·반 변경은 검색/카운트에 영향 → 갱신
+  if (st){ buildTabs(); if (GRADED) renderSummary(); }   // 이름·반은 검색/카운트/요약 갱신
 }
 
 async function saveAnswer(idx, q, value){
   const st = await postEdit({idx, field:"answer", subject:curSubject, q, value});
-  if (st) renderTable();     // 점수·정오 즉시 반영(펼침 유지)
+  if (st){ renderTable(); if (GRADED) renderSummary(); }  // 판독상태·요약 즉시 반영(펼침 유지)
 }
 
 function esc(v){ return String(v ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
 
 $("#rvSearch").addEventListener("input", () => renderTable());
+
+// ── STEP 4 → 5: 채점 ───────────────────────────────
+$("#btnGrade").addEventListener("click", () => {
+  if (!RESULT || !SCAN_JOB) return;
+  GRADED = true;
+  $("#gradeMsg").innerHTML = "✓ 채점 완료 — 아래 <b>5단계</b>에서 결과를 확인하고 성적표를 내려받으세요.";
+  $("#btnGrade").textContent = "채점 다시 하기";
+  renderDownloads(SCAN_JOB);
+  $("#summarySlot").style.display = "block";
+  renderSummary();
+  $("#panel-result").style.display = "block";
+  $("#panel-result").scrollIntoView({behavior:"smooth"});
+});
+
+// ── STEP 5: 채점 결과 요약(읽기 전용) ──────────────
+function renderSummary(){
+  const tabs = tabList();
+  if (!curSum || !tabs.includes(curSum)) curSum = tabs[0] || null;
+  $("#sumTabs").innerHTML = tabs.map(t => {
+    const n = RESULT.students.filter(s => subjData(s, t)).length;
+    return `<button class="rv-tab ${t===curSum?'on':''}" data-subj="${t}">${t}<span class="cnt">${n}</span></button>`;
+  }).join("");
+  $$("#sumTabs .rv-tab").forEach(b => b.addEventListener("click", () => {
+    curSum = b.dataset.subj; renderSummary();
+  }));
+  const rows = RESULT.students.map(s => ({s, d:subjData(s, curSum)})).filter(x => x.d);
+  const scores = rows.map(x => Number(x.d.원점수)).filter(v => !isNaN(v));
+  const avg = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length) : 0;
+  const mx = scores.length ? Math.max(...scores) : 0;
+  const mn = scores.length ? Math.min(...scores) : 0;
+  $("#sumStats").innerHTML = `
+    <div class="sum-stat"><div class="lb">응시</div><div class="vl">${rows.length}명</div></div>
+    <div class="sum-stat"><div class="lb">평균</div><div class="vl">${avg.toFixed(1)}</div></div>
+    <div class="sum-stat"><div class="lb">최고</div><div class="vl">${mx}</div></div>
+    <div class="sum-stat"><div class="lb">최저</div><div class="vl">${mn}</div></div>`;
+  const header = `<tr><th>반</th><th>번호</th><th>성명</th><th>원점수</th><th>예상등급</th></tr>`;
+  $("#sumBody").innerHTML = header + rows.map(({s, d}) => {
+    const gr = d.예상등급 ? `<span class="rv-grade">${d.예상등급}등급</span>` : `<span class="rv-grade none">–</span>`;
+    return `<tr class="stu">
+      <td>${esc(s.반)}</td><td>${esc(s.번호)}</td><td style="font-weight:700">${esc(s.이름)}</td>
+      <td><span class="rv-score">${d.원점수}<span class="mx"> / ${d.만점}</span></span></td>
+      <td>${gr}</td></tr>`;
+  }).join("");
+}
 
 $("#btnReset").addEventListener("click", () => location.reload());
 
