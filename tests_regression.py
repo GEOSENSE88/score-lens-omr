@@ -273,7 +273,7 @@ def t8_report_layouts():
         wb = openpyxl.load_workbook(out)
         check(f"UNIV {g}학년 시트", f"UNIV {g}학년" in wb.sheetnames and "대교협" in wb.sheetnames)
 
-    # 정오표에 학생 답안이 표시되는지 (5번 오답=학생3→정답4, 2번 미마킹=·)
+    # 정오표에 학생이 마킹한 답만 표시 (오답도 학생답만, 미마킹=·)
     jeongo = {1: {"답": 2, "정답": 2, "배점": 2, "ok": True},
               2: {"답": 0, "정답": 5, "배점": 2, "ok": False},
               5: {"답": 3, "정답": 4, "배점": 2, "ok": False}}
@@ -283,7 +283,7 @@ def t8_report_layouts():
     ws = openpyxl.load_workbook(out)["정오표_국어"]
     # 범례 1행, 헤더 2행, 데이터 3행 / 문항 셀은 7열(NB=6)부터
     v1, v2, v5 = ws.cell(3, 7).value, ws.cell(3, 8).value, ws.cell(3, 11).value
-    check("정오표 학생답 표시", v1 == 2 and v2 == "·" and v5 == "3→4", f"{v1},{v2},{v5}")
+    check("정오표 학생답만 표시", v1 == 2 and v2 == "·" and v5 == 3, f"{v1},{v2},{v5}")
 
 
 # ── 9. 등급컷 → 예상 등급·표준점수·백분위 ───────────────────────

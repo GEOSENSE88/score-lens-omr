@@ -302,9 +302,8 @@ def _write_univ(ws, students: list[dict], grade: int):
 def _write_marksheet(ws, subject: str, rows: list[dict], nq: int):
     NB = 6                                  # 문항 앞 기본 컬럼 수
     # 1행: 범례 (셀 숫자 = 학생이 마킹한 답안)
-    ws.cell(1, 1, "숫자 = 학생 답안 ·  초록 = 정답  빨강 = 오답  "
-                  "· = 미마킹  중 = 중복마킹  회색 = 정답키 없음  "
-                  "(오답 셀은 「학생답→정답」)").font = Font(bold=True, color="1F4E79")
+    ws.cell(1, 1, "숫자 = 학생이 마킹한 답 ·  초록 = 정답  빨강 = 오답  "
+                  "· = 미마킹  중 = 중복마킹  회색 = 정답키 없음").font = Font(bold=True, color="1F4E79")
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NB + nq)
 
     headers = ["반", "번호", "이름", "원점수", "만점", "틀린문항"] + [str(q) for q in range(1, nq + 1)]
@@ -325,16 +324,13 @@ def _write_marksheet(ws, subject: str, rows: list[dict], nq: int):
             if not d:
                 cell.fill = GRAY
                 continue
-            stu, ans, ok = d.get("답"), d.get("정답"), d.get("ok")
+            stu, ok = d.get("답"), d.get("ok")
             if stu in (0, "", None):
                 cell.value = "·"            # 미마킹
             elif stu == -1:
                 cell.value = "중"           # 중복마킹
-            elif ok:
-                cell.value = stu            # 정답: 학생답만
             else:
-                # 오답: 학생답→정답 (정답을 알면 함께 표기)
-                cell.value = f"{stu}→{ans}" if ans not in (None, "") else stu
+                cell.value = stu            # 학생이 마킹한 답 (정답/오답 모두 색으로 구분)
             cell.fill = GREEN if ok else RED
     ws.freeze_panes = ws.cell(3, NB + 1).coordinate
     ws.row_dimensions[1].height = 15

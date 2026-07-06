@@ -125,13 +125,31 @@ def fetch_grade_cuts(irecord: str, grade: int,
     return merged
 
 
+def _n_raw(cut: dict) -> int:
+    return sum(1 for c in cut.get("cuts", []) if c.get("raw") is not None)
+
+
 def save_grade_cuts(irecord: str, grade: int, cuts: dict,
                     keys_dir: Path | None = None) -> Path:
+    """등급컷 저장. 재수집 시 원점수컷을 잃지 않도록 병합한다.
+
+    고3 국어·수학은 시험 직후 '예상' 단계에는 원점수 예상컷이 뜨지만, 며칠 뒤
+    '확정' 단계가 되면 원점수 칸이 '-' 로 바뀐다(선택과목제라 표준점수만 확정).
+    그래서 다시 '정답 가져오기'를 눌러도 이미 받아둔 원점수컷이 사라지지 않도록,
+    과목별로 원점수(raw)가 더 많이 채워진 쪽을 유지한다.
+    """
     keys_dir = Path(keys_dir or ROOT / "keys")
     keys_dir.mkdir(parents=True, exist_ok=True)
+    prev = load_grade_cuts(irecord, keys_dir)
+    merged = dict(cuts)
+    for subj, old in prev.items():
+        new = merged.get(subj)
+        # 새 데이터에 원점수가 없거나 예전보다 적으면 예전(원점수 있는) 것을 지킨다
+        if _n_raw(old) > _n_raw(new or {}):
+            merged[subj] = old
     payload = dict(exam_id=irecord, grade=grade, kind="grade_cuts",
                    source="EBSi retrieveGrdCutList.ajax (예상/확정 등급컷)",
-                   subjects=cuts)
+                   subjects=merged)
     path = keys_dir / f"{irecord}_등급컷.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
