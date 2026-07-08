@@ -609,7 +609,7 @@ $("#btnFetch").addEventListener("click", async () => {
     data.append("month", $("#fm").value);
     data.append("grade", grade);
     const res = await fetch("/api/exams/register", {method:"POST", body:data});
-    const j = await res.json();
+    const j = await safeJson(res);
     if (!j.ok) throw new Error(j.message || "요청 실패");
     // 등록 잡 폴링
     await new Promise((resolve, reject) => {
@@ -724,6 +724,19 @@ function updateGo(){
   $("#goSummary").textContent = n ? `${labels.join(" · ")} — ${n}과목 스캔` : "업로드된 과목 없음";
 }
 
+// 응답이 JSON 이 아니면(프록시 HTML 오류 등) 친절한 메시지로 변환
+async function safeJson(res){
+  const text = await res.text();
+  try{
+    return JSON.parse(text);
+  }catch{
+    const code = res.status || 0;
+    if (code === 413) throw new Error("업로드 용량이 너무 큽니다. PDF 크기를 줄이거나 나눠서 올려주세요.");
+    if (code === 502 || code === 504) throw new Error("서버 처리 시간이 초과됐습니다. 파일 수를 줄여 다시 시도해 주세요.");
+    throw new Error(`서버 응답 오류(${code || "네트워크"}). 잠시 후 다시 시도해 주세요.`);
+  }
+}
+
 function showAlert(msg){
   const a = $("#alert");
   a.textContent = msg; a.classList.add("show");
@@ -747,7 +760,7 @@ $("#form").addEventListener("submit", async e => {
   $("#btnGo").textContent = "업로드 중…";
   try{
     const res = await fetch("/api/score", {method:"POST", body:data});
-    const j = await res.json();
+    const j = await safeJson(res);
     if (!j.ok){ throw new Error(j.message || "요청 실패"); }
     $("#btnGo").textContent = "스캔 진행 중…";
     $("#panel-scan").style.display = "block";
