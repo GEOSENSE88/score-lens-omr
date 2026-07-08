@@ -501,6 +501,29 @@ def t97_xip_kuksu():
     check("XIP 국·수 키가 stored 6월 키와 일치", ok, p.stdout[-300:])
 
 
+def t98_multi_pdf_merge():
+    print("[9.8] 한 과목 여러 PDF 업로드 → 병합 (스캐너 분할본 대응)")
+    code = (
+        "import web_app as w, fitz, io, pathlib, tempfile\n"
+        "src=fitz.open('work/synth_g12/synth_국어.pdf'); n=src.page_count; h=n//2\n"
+        "a=fitz.open(); a.insert_pdf(src,from_page=0,to_page=h-1); ab=a.tobytes(); a.close()\n"
+        "b=fitz.open(); b.insert_pdf(src,from_page=h,to_page=n-1); bb=b.tobytes(); b.close(); src.close()\n"
+        "tmp=pathlib.Path(tempfile.mkdtemp())\n"
+        "data={'pdf_korean':[(io.BytesIO(ab),'A.pdf'),(io.BytesIO(bb),'B.pdf')]}\n"
+        "with w.app.test_request_context('/api/score',method='POST',data=data,content_type='multipart/form-data'):\n"
+        "    p=w.save_upload(tmp,'pdf_korean')\n"
+        "merged=fitz.open(p); mc=merged.page_count; merged.close()\n"
+        "assert mc==n, f'병합 페이지 {mc} != 원본 {n}'\n"
+        "assert not list(tmp.glob('*_part*.pdf')), '임시 분할본이 남음'\n"
+        "print('OK 병합', mc, '페이지')\n")
+    import os
+    env = os.environ.copy(); env.update(PYTHONIOENCODING="utf-8", OMR_OPEN_ACCESS="1")
+    p = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env, text=True,
+                       encoding="utf-8", errors="replace",
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
+    check("여러 PDF 병합", p.returncode == 0 and "OK" in p.stdout, p.stdout[-300:])
+
+
 # ── 10. 웹 e2e (옵션: 서버 실행 중일 때) ─────────────────────────
 def t10_web():
     print("[10] 웹 e2e (고1 6과목 → 통합성적표)")
@@ -552,7 +575,7 @@ def main() -> int:
     for t in [t1_imports, t2_key_isolation, t3_history_g3, t4_consolidate_g3,
               t5_synth_g12, t6_edge, t65_simfixes, t67_autorotate, t7_calibrator, t8_report_layouts,
               t9_grade_cuts, t93_mimac, t95_proxy_security, t96_results_edit,
-              t97_xip_kuksu] + ([t10_web] if web else []):
+              t97_xip_kuksu, t98_multi_pdf_merge] + ([t10_web] if web else []):
         try:
             t()
         except Exception as exc:

@@ -392,16 +392,39 @@ def allowed_file(path: str) -> bool:
 
 
 def save_upload(run_upload_dir: Path, field: str) -> Path | None:
-    file = request.files.get(field)
-    if not file or not file.filename:
+    """한 필드의 업로드 저장. 같은 필드에 PDF 가 여러 개면 하나로 병합한다.
+
+    (한 과목 답안지를 스캐너가 여러 PDF 로 나눠 만든 경우 대비. 채점은 각 장의
+    수험번호·반·번호로 학생을 식별하므로 병합 순서는 결과에 영향이 없다.)
+    """
+    fs = [f for f in request.files.getlist(field) if f and f.filename]
+    if not fs:
         return None
-    if not allowed_file(file.filename):
-        raise ValueError(f"{field}: PDF/CSV 파일만 업로드할 수 있습니다.")
-    # ⚠️ 파일명은 반드시 필드명 기반으로 저장한다.
-    #    secure_filename('국어.pdf') 는 한글을 전부 제거해 'pdf' 만 남기므로,
-    #    원본 파일명을 쓰면 과목별 업로드가 같은 이름으로 서로 덮어쓴다.
-    path = run_upload_dir / f"{field}{Path(file.filename).suffix.lower()}"
-    file.save(path)
+    for f in fs:
+        if not allowed_file(f.filename):
+            raise ValueError(f"{field}: PDF/CSV 파일만 업로드할 수 있습니다.")
+    suffix = Path(fs[0].filename).suffix.lower()
+    # ⚠️ 파일명은 반드시 필드명 기반으로 저장한다(원본 한글명은 secure_filename 이
+    #    전부 제거 → 과목별 업로드가 서로 덮어씀).
+    # CSV 나 단일 PDF 는 그대로 저장
+    if suffix != ".pdf" or len(fs) == 1:
+        path = run_upload_dir / f"{field}{suffix}"
+        fs[0].save(path)
+        return path
+    # PDF 여러 개 → 병합
+    import fitz
+    merged = fitz.open()
+    try:
+        for i, f in enumerate(fs):
+            part = run_upload_dir / f"{field}_part{i}.pdf"
+            f.save(part)
+            with fitz.open(part) as doc:
+                merged.insert_pdf(doc)
+            part.unlink(missing_ok=True)
+        path = run_upload_dir / f"{field}.pdf"
+        merged.save(path)
+    finally:
+        merged.close()
     return path
 
 

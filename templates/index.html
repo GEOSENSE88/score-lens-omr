@@ -477,7 +477,7 @@
       <div class="step-head">
         <div class="step-num">2</div>
         <h2>답안지 업로드</h2>
-        <span class="hint">과목 카드를 클릭하거나 PDF를 끌어다 놓으세요</span>
+        <span class="hint">과목 카드를 클릭하거나 PDF를 끌어다 놓으세요 · 한 과목에 여러 PDF 가능</span>
       </div>
       <div class="subject-grid" id="subjectGrid"></div>
     </section>
@@ -663,18 +663,25 @@ function renderSubjects(){
         <span>📄</span><span class="nm" data-nm></span>
         <button type="button" class="rm" title="제거">✕</button>
       </div>
-      <input type="file" accept=".pdf" ${s.available ? "" : "disabled"}>
+      <input type="file" accept=".pdf" multiple ${s.available ? "" : "disabled"}>
     `;
     const input = el.querySelector("input");
-    const setFile = f => {
-      if (!f || !f.name.toLowerCase().endsWith(".pdf")) return;
-      files[s.key] = f;
+    const addFiles = list => {
+      const pdfs = Array.from(list || []).filter(f => f && f.name.toLowerCase().endsWith(".pdf"));
+      if (!pdfs.length) return;
+      const cur = files[s.key] || [];
+      // 이름+크기 중복 제거하며 누적(여러 번 나눠 선택 가능)
+      const seen = new Set(cur.map(f => f.name + f.size));
+      pdfs.forEach(f => { if (!seen.has(f.name + f.size)){ cur.push(f); seen.add(f.name + f.size); } });
+      files[s.key] = cur;
+      const mb = cur.reduce((a, f) => a + f.size, 0) / 1048576;
+      const label = cur.length === 1 ? cur[0].name : `${cur.length}개 파일`;
       el.classList.add("has");
-      el.querySelector("[data-nm]").textContent = `${f.name} (${(f.size/1048576).toFixed(1)}MB)`;
-      el.querySelector("[data-state]").textContent = "업로드 준비 완료";
+      el.querySelector("[data-nm]").textContent = `${label} (${mb.toFixed(1)}MB)`;
+      el.querySelector("[data-state]").textContent = `업로드 준비 완료 · ${cur.length}개`;
       updateGo();
     };
-    input.addEventListener("change", () => setFile(input.files[0]));
+    input.addEventListener("change", () => addFiles(input.files));
     // 카드 클릭 → 파일 열기 창 (제거 버튼 클릭은 제외)
     el.addEventListener("click", e => {
       if (e.target.closest(".rm")) return;
@@ -684,17 +691,18 @@ function renderSubjects(){
       e.preventDefault(); e.stopPropagation();
       delete files[s.key]; input.value = "";
       el.classList.remove("has");
-      el.querySelector("[data-state]").textContent = "PDF 선택 또는 드래그";
+      el.querySelector("[data-state]").textContent = "PDF 선택 또는 드래그 (여러 개 가능)";
       updateGo();
     });
     if (s.available){
+      el.querySelector("[data-state]").textContent = "PDF 선택 또는 드래그 (여러 개 가능)";
       ["dragover","dragenter"].forEach(ev => el.addEventListener(ev, e => {
         e.preventDefault(); el.classList.add("drag");
       }));
       ["dragleave","drop"].forEach(ev => el.addEventListener(ev, e => {
         e.preventDefault(); el.classList.remove("drag");
       }));
-      el.addEventListener("drop", e => setFile(e.dataTransfer.files[0]));
+      el.addEventListener("drop", e => addFiles(e.dataTransfer.files));
     }
     grid.appendChild(el);
   });
@@ -732,7 +740,8 @@ $("#form").addEventListener("submit", async e => {
   data.append("exam_year", $("#exam_year").value);
   const nf = $("#namesInput").files[0];
   if (nf) data.append("names", nf);
-  for (const [k, f] of Object.entries(files)) data.append(`pdf_${k}`, f);
+  for (const [k, arr] of Object.entries(files))
+    (Array.isArray(arr) ? arr : [arr]).forEach(f => data.append(`pdf_${k}`, f));
 
   $("#btnGo").disabled = true;
   $("#btnGo").textContent = "업로드 중…";
