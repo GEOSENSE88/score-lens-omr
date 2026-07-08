@@ -68,6 +68,7 @@ if BEHIND_PROXY:
 
 JOBS: dict[str, dict] = {}
 RESULTS: dict[str, dict] = {}   # run_id → 편집 가능한 채점 결과(학생 레코드)
+PENDING: dict[str, dict] = {}   # run_id → 업로드 진행 중인 스캔(파일 나눠 받기)
 
 
 def _rebuild_workbook(run_id: str) -> None:
@@ -233,6 +234,9 @@ def _sweep_old_data() -> None:
                     shutil.rmtree(d, ignore_errors=True)
             except OSError:
                 pass
+    # 버려진 업로드 세션(디렉터리가 사라진 PENDING) 정리
+    for rid in [r for r, p in PENDING.items() if not p["dir_up"].exists()]:
+        PENDING.pop(rid, None)
 
 
 def _start_sweeper() -> None:
@@ -611,15 +615,43 @@ def api_exam_register():
                    status_url=url_for("api_job", run_id=job_id)), 202
 
 
+def _launch_job(run_id: str, run_output_dir: Path, grade: int,
+                requested: list, exam_id, exam_year, names) -> None:
+    JOBS[run_id] = dict(status="queued", ok=None, run_id=run_id, grade=grade,
+                        total=len(requested), completed=0,
+                        message="작업을 대기열에 올렸습니다.",
+                        events=[dict(t=datetime.now().strftime("%H:%M:%S"),
+                                     kind="info", text="작업을 대기열에 올렸습니다.")],
+                        downloads=[], runs=[])
+    threading.Thread(target=process_job,
+                     args=(run_id, run_output_dir, grade, requested,
+                           exam_id, exam_year, 300, names),
+                     daemon=True).start()
+
+
+def _build_requested(grade: int, resolve):
+    """(spec, path) 목록과 미보정 과목 목록을 만든다. resolve(spec)→Path|None."""
+    requested, unavailable = [], []
+    for spec in SUBJECTS_BY_GRADE[grade]:
+        path = resolve(spec)
+        if not path:
+            continue
+        if not subject_available(spec):
+            unavailable.append(spec["label"])
+            continue
+        requested.append((spec, path))
+    return requested, unavailable
+
+
 @app.post("/api/score")
 def api_score():
-    _sweep_old_data()                       # 오래된 업로드·결과 자동 정리 (TTL 설정 시)
+    """단일 요청 업로드(소용량). 대용량은 /api/score/init·file·start 를 쓴다."""
+    _sweep_old_data()
     run_id = uuid.uuid4().hex[:12]
     run_upload_dir = UPLOAD_ROOT / run_id
     run_output_dir = WEB_OUTPUT_ROOT / run_id
     run_upload_dir.mkdir(parents=True, exist_ok=True)
     run_output_dir.mkdir(parents=True, exist_ok=True)
-
     try:
         grade = int(request.form.get("grade", "3"))
         if grade not in SUBJECTS_BY_GRADE:
@@ -627,40 +659,132 @@ def api_score():
         exam_id = request.form.get("exam_id", "").strip() or None
         exam_year = request.form.get("exam_year", "").strip() or None
         names = save_upload(run_upload_dir, "names")
-
-        requested: list[tuple[dict, Path]] = []
-        unavailable: list[str] = []
-        for spec in SUBJECTS_BY_GRADE[grade]:
-            uploaded = save_upload(run_upload_dir, f"pdf_{spec['key']}")
-            if not uploaded:
-                continue
-            if not subject_available(spec):
-                unavailable.append(spec["label"])
-                continue
-            requested.append((spec, uploaded))
+        requested, unavailable = _build_requested(
+            grade, lambda spec: save_upload(run_upload_dir, f"pdf_{spec['key']}"))
         if unavailable:
             return jsonify(ok=False, message=(
                 f"{', '.join(unavailable)}: 고{grade} 판독 좌표가 아직 보정되지 않았습니다. "
                 "첫 실물 스캔으로 보정 후 사용할 수 있습니다.")), 400
         if not requested:
             return jsonify(ok=False, message="채점할 PDF를 한 개 이상 업로드하세요."), 400
-
-        JOBS[run_id] = dict(status="queued", ok=None, run_id=run_id, grade=grade,
-                            total=len(requested), completed=0,
-                            message="작업을 대기열에 올렸습니다.",
-                            events=[dict(t=datetime.now().strftime("%H:%M:%S"),
-                                         kind="info", text="작업을 대기열에 올렸습니다.")],
-                            downloads=[], runs=[])
-        threading.Thread(target=process_job,
-                         args=(run_id, run_output_dir, grade, requested,
-                               exam_id, exam_year, 300, names),
-                         daemon=True).start()
+        _launch_job(run_id, run_output_dir, grade, requested, exam_id, exam_year, names)
         return jsonify(ok=True, run_id=run_id,
                        status_url=url_for("api_job", run_id=run_id)), 202
     except ValueError as exc:
         return jsonify(ok=False, message=str(exc)), 400
     except Exception as exc:
         (run_output_dir / "error.txt").write_text(repr(exc), encoding="utf-8")
+        return jsonify(ok=False, message=repr(exc), run_id=run_id), 500
+
+
+# ── 대용량 업로드: 파일을 나눠 여러 요청으로 받는다 ────────────────
+# (Cloudflare 무료 플랜은 요청 1건당 100MB 제한 → 250명·여러 과목이면 초과.
+#  init 로 세션을 만들고 file 로 조각조각 올린 뒤 start 로 채점 시작.)
+def _save_parts(run_upload_dir: Path, field: str, files) -> int:
+    start = len(list(run_upload_dir.glob(f"{field}__p*.pdf")))
+    saved = 0
+    for f in files:
+        if not f or not f.filename:
+            continue
+        if not allowed_file(f.filename):
+            raise ValueError(f"{field}: PDF 파일만 업로드할 수 있습니다.")
+        f.save(run_upload_dir / f"{field}__p{start + saved}.pdf")
+        saved += 1
+    return saved
+
+
+def _merge_parts(run_upload_dir: Path, field: str) -> Path | None:
+    parts = sorted(run_upload_dir.glob(f"{field}__p*.pdf"),
+                   key=lambda p: int(re.search(r"__p(\d+)", p.name).group(1)))
+    if not parts:
+        return None
+    out = run_upload_dir / f"{field}.pdf"
+    if len(parts) == 1:
+        parts[0].replace(out)
+        return out
+    import fitz
+    merged = fitz.open()
+    try:
+        for p in parts:
+            with fitz.open(p) as doc:
+                merged.insert_pdf(doc)
+        merged.save(out)
+    finally:
+        merged.close()
+    for p in parts:
+        p.unlink(missing_ok=True)
+    return out
+
+
+@app.post("/api/score/init")
+def api_score_init():
+    _sweep_old_data()
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        grade = int(body.get("grade", 3))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, message="학년 값을 확인하세요."), 400
+    if grade not in SUBJECTS_BY_GRADE:
+        return jsonify(ok=False, message="학년은 1·2·3 중 하나여야 합니다."), 400
+    run_id = uuid.uuid4().hex[:12]
+    run_upload_dir = UPLOAD_ROOT / run_id
+    run_output_dir = WEB_OUTPUT_ROOT / run_id
+    run_upload_dir.mkdir(parents=True, exist_ok=True)
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+    PENDING[run_id] = dict(
+        grade=grade,
+        exam_id=(body.get("exam_id") or "").strip() or None,
+        exam_year=(body.get("exam_year") or "").strip() or None,
+        dir_up=run_upload_dir, dir_out=run_output_dir)
+    return jsonify(ok=True, run_id=run_id), 202
+
+
+@app.post("/api/score/<run_id>/file")
+def api_score_file(run_id: str):
+    p = PENDING.get(run_id)
+    if not p:
+        return jsonify(ok=False, message="업로드 세션을 찾을 수 없습니다(만료됐을 수 있음)."), 404
+    dir_up = p["dir_up"]
+    try:
+        nf = request.files.getlist("names")
+        nf = [f for f in nf if f and f.filename]
+        if nf:
+            if not allowed_file(nf[0].filename):
+                raise ValueError("names: CSV 파일만 업로드할 수 있습니다.")
+            nf[0].save(dir_up / "names.csv")
+        saved = 0
+        for spec in SUBJECTS_BY_GRADE[p["grade"]]:
+            field = f"pdf_{spec['key']}"
+            files = [f for f in request.files.getlist(field) if f and f.filename]
+            if files:
+                saved += _save_parts(dir_up, field, files)
+    except ValueError as exc:
+        return jsonify(ok=False, message=str(exc)), 400
+    return jsonify(ok=True, saved=saved), 200
+
+
+@app.post("/api/score/<run_id>/start")
+def api_score_start(run_id: str):
+    p = PENDING.pop(run_id, None)
+    if not p:
+        return jsonify(ok=False, message="업로드 세션을 찾을 수 없습니다."), 404
+    grade, dir_up, dir_out = p["grade"], p["dir_up"], p["dir_out"]
+    try:
+        names = dir_up / "names.csv" if (dir_up / "names.csv").exists() else None
+        requested, unavailable = _build_requested(
+            grade, lambda spec: _merge_parts(dir_up, f"pdf_{spec['key']}"))
+        if unavailable:
+            return jsonify(ok=False, message=(
+                f"{', '.join(unavailable)}: 고{grade} 판독 좌표가 아직 보정되지 않았습니다. "
+                "첫 실물 스캔으로 보정 후 사용할 수 있습니다.")), 400
+        if not requested:
+            return jsonify(ok=False, message="채점할 PDF를 한 개 이상 업로드하세요."), 400
+        _launch_job(run_id, dir_out, grade, requested,
+                    p["exam_id"], p["exam_year"], names)
+        return jsonify(ok=True, run_id=run_id,
+                       status_url=url_for("api_job", run_id=run_id)), 202
+    except Exception as exc:
+        (dir_out / "error.txt").write_text(repr(exc), encoding="utf-8")
         return jsonify(ok=False, message=repr(exc), run_id=run_id), 500
 
 

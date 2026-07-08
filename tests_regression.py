@@ -524,6 +524,38 @@ def t98_multi_pdf_merge():
     check("여러 PDF 병합", p.returncode == 0 and "OK" in p.stdout, p.stdout[-300:])
 
 
+def t99_chunked_upload():
+    print("[9.9] 대용량 분할 업로드 (init·file×N·start → 병합 채점)")
+    code = (
+        "import web_app as w, time, io, fitz, pathlib\n"
+        "c=w.app.test_client(); synth=pathlib.Path('work/synth_g12')\n"
+        "src=fitz.open(synth/'synth_국어.pdf'); n=src.page_count; per=max(1,n//3); parts=[]\n"
+        "for i in range(0,n,per):\n"
+        "    d=fitz.open(); d.insert_pdf(src,from_page=i,to_page=min(i+per-1,n-1)); parts.append(d.tobytes()); d.close()\n"
+        "src.close()\n"
+        "rid=c.post('/api/score/init',json={'grade':1,'exam_id':'202606041'}).get_json()['run_id']\n"
+        "c.post(f'/api/score/{rid}/file',data={'names':(open(synth/'synth_names.csv','rb'),'n.csv')},content_type='multipart/form-data')\n"
+        "for i,pb in enumerate(parts):\n"
+        "    r=c.post(f'/api/score/{rid}/file',data={'pdf_korean':(io.BytesIO(pb),f'k{i}.pdf')},content_type='multipart/form-data').get_json()\n"
+        "    assert r['ok'] and r['saved']==1, r\n"
+        "c.post(f'/api/score/{rid}/file',data={'pdf_social':(open(synth/'synth_통합사회.pdf','rb'),'s.pdf')},content_type='multipart/form-data')\n"
+        "st=c.post(f'/api/score/{rid}/start',json={}).get_json(); assert st['ok'], st\n"
+        "for _ in range(90):\n"
+        "    time.sleep(2)\n"
+        "    if c.get(f'/api/job/{rid}').get_json()['status']=='done': break\n"
+        "res=c.get(f'/api/result/{rid}').get_json()\n"
+        "kor=[s for s in res['students'] if s['subjects'].get('국어')]\n"
+        "assert len(kor)==6, f'국어 학생수 {len(kor)} != 6 (병합 실패)'\n"
+        "assert not w.PENDING.get(rid), 'start 후 PENDING 미정리'\n"
+        "print('OK 3조각 병합·6명 채점')\n")
+    import os
+    env = os.environ.copy(); env.update(PYTHONIOENCODING="utf-8", OMR_OPEN_ACCESS="1")
+    p = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env, text=True,
+                       encoding="utf-8", errors="replace",
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
+    check("분할 업로드→병합 채점", p.returncode == 0 and "OK" in p.stdout, p.stdout[-300:])
+
+
 # ── 10. 웹 e2e (옵션: 서버 실행 중일 때) ─────────────────────────
 def t10_web():
     print("[10] 웹 e2e (고1 6과목 → 통합성적표)")
@@ -575,7 +607,7 @@ def main() -> int:
     for t in [t1_imports, t2_key_isolation, t3_history_g3, t4_consolidate_g3,
               t5_synth_g12, t6_edge, t65_simfixes, t67_autorotate, t7_calibrator, t8_report_layouts,
               t9_grade_cuts, t93_mimac, t95_proxy_security, t96_results_edit,
-              t97_xip_kuksu, t98_multi_pdf_merge] + ([t10_web] if web else []):
+              t97_xip_kuksu, t98_multi_pdf_merge, t99_chunked_upload] + ([t10_web] if web else []):
         try:
             t()
         except Exception as exc:

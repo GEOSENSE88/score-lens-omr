@@ -745,27 +745,63 @@ function showAlert(msg){
 }
 
 /* ── 제출 & 폴링 ── */
+// 파일을 나눠 여러 요청으로 업로드한다(요청 1건 = 프록시 100MB 제한 미만).
+const BATCH_LIMIT = 80 * 1024 * 1024;   // 배치당 상한(여유 20MB)
+const FILE_LIMIT = 95 * 1024 * 1024;    // 단일 파일 상한
+
 $("#form").addEventListener("submit", async e => {
   e.preventDefault();
-  const data = new FormData();
-  data.append("grade", grade);
-  data.append("exam_id", $("#exam_select").value);
-  data.append("exam_year", $("#exam_year").value);
-  const nf = $("#namesInput").files[0];
-  if (nf) data.append("names", nf);
+  // (과목, 파일) 평탄화
+  const items = [];
   for (const [k, arr] of Object.entries(files))
-    (Array.isArray(arr) ? arr : [arr]).forEach(f => data.append(`pdf_${k}`, f));
+    (Array.isArray(arr) ? arr : [arr]).forEach(f => items.push({k, f}));
+  const big = items.find(it => it.f.size > FILE_LIMIT);
+  if (big){
+    showAlert(`'${big.f.name}' (${(big.f.size/1048576).toFixed(0)}MB)이 너무 큽니다. 한 파일을 100MB 미만으로 나눠 저장해 올려주세요.`);
+    return;
+  }
 
   $("#btnGo").disabled = true;
-  $("#btnGo").textContent = "업로드 중…";
+  $("#btnGo").textContent = "업로드 준비 중…";
   try{
-    const res = await fetch("/api/score", {method:"POST", body:data});
-    const j = await safeJson(res);
-    if (!j.ok){ throw new Error(j.message || "요청 실패"); }
+    // 1) 업로드 세션 생성
+    const init = await safeJson(await fetch("/api/score/init", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({grade, exam_id:$("#exam_select").value, exam_year:$("#exam_year").value})}));
+    if (!init.ok) throw new Error(init.message || "업로드 세션 생성 실패");
+    const rid = init.run_id;
+
+    // 2) 성명 CSV (있으면 단독 전송)
+    const nf = $("#namesInput").files[0];
+    if (nf){
+      const d = new FormData(); d.append("names", nf);
+      const r = await safeJson(await fetch(`/api/score/${rid}/file`, {method:"POST", body:d}));
+      if (!r.ok) throw new Error(r.message || "명단 업로드 실패");
+    }
+
+    // 3) PDF 배치 업로드 (배치 크기 ≤ 80MB)
+    let batch = new FormData(), bytes = 0, cnt = 0, done = 0;
+    const flush = async () => {
+      if (!cnt) return;
+      const r = await safeJson(await fetch(`/api/score/${rid}/file`, {method:"POST", body:batch}));
+      if (!r.ok) throw new Error(r.message || "업로드 실패");
+      batch = new FormData(); bytes = 0; cnt = 0;
+    };
+    for (const it of items){
+      if (cnt && bytes + it.f.size > BATCH_LIMIT) await flush();
+      batch.append(`pdf_${it.k}`, it.f); bytes += it.f.size; cnt++; done++;
+      $("#btnGo").textContent = `업로드 중… ${done}/${items.length}`;
+    }
+    await flush();
+
+    // 4) 채점 시작
+    const st = await safeJson(await fetch(`/api/score/${rid}/start`, {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"}));
+    if (!st.ok) throw new Error(st.message || "채점 시작 실패");
     $("#btnGo").textContent = "스캔 진행 중…";
     $("#panel-scan").style.display = "block";
     $("#panel-scan").scrollIntoView({behavior:"smooth"});
-    poll(j.status_url);
+    poll(st.status_url);
   }catch(err){
     showAlert(err.message);
     $("#btnGo").disabled = false;
