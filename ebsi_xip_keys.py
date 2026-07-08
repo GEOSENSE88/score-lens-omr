@@ -130,6 +130,40 @@ def fetch_points(session: requests.Session, paper_id: str) -> tuple[dict[int, in
     return points, item_ids, url
 
 
+def fetch_paper_detail(session: requests.Session, paper_id: str):
+    """Paper.ebs 를 한 번 파싱해 (과목명, 배점{문항:int}, 유형{문항:TypeID}, url) 반환.
+
+    TypeID: '21'=객관식(5지선다), '31'=단답형. root@SubjectName 이 선택과목명
+    (예: '확률과 통계', '화법과 작문')이라 paperId→선택과목 매핑에 쓴다.
+    시도교육청 학평의 해설 PDF 레이아웃과 무관해 국·수 키 생성을 안정화한다."""
+    url = f"{XIP_BASE}/webservice/Paper.ebs"
+    response = session.get(
+        url,
+        params={
+            "paperId": paper_id, "isMoc": "1", "IsEncrypt": "false", "site": "HSC",
+            "fmySiteDsCd": "HSC", "Action": "SelectGroup", "pMode": "false",
+            "childrenUserId": "", "timeStamp": str(int(time.time() * 1000)),
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    raw = "".join(response.text.split())
+    root = ET.fromstring(base64.urlsafe_b64decode(raw).decode("utf-8", errors="replace"))
+    subject_name = (root.attrib.get("SubjectName") or "").strip()
+    points: dict[int, int] = {}
+    types: dict[int, str] = {}
+    for detail in root.findall(".//PaperDetail"):
+        number = int(detail.attrib.get("ItemNumber", "0") or "0")
+        if number <= 0:
+            continue
+        item = detail.find("Item")
+        if item is None:
+            continue
+        points[number] = int(item.attrib.get("Point", "0") or "0")
+        types[number] = item.attrib.get("TypeID", "")
+    return subject_name, points, types, url
+
+
 def write_key(exam_id: str, subject: str, paper_id: str, output_dir: Path) -> Path:
     session = _session()
     answers, answer_item_ids, answer_url = fetch_answers(session, paper_id)

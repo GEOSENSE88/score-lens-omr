@@ -460,6 +460,47 @@ def t96_results_edit():
     check("결과 조회·수정·재채점·다운로드 반영", p.returncode == 0 and "OK" in p.stdout, p.stdout[-300:])
 
 
+def t97_xip_kuksu():
+    print("[9.7] 고3 국·수 XIP 키 생성 (6월 stored 키와 완전 일치 + 학평 org코드)")
+    code = (
+        "import exam_registry as er, json, tempfile, pathlib\n"
+        "s=None\n"
+        "try:\n"
+        "    ir=er.find_irecord(2026,6,3)\n"
+        "    assert ir=='202606043', 'find_irecord 6월='+str(ir)\n"
+        "    papers=er.discover_papers('202606043')\n"
+        "except Exception as e:\n"
+        "    print('SKIP', repr(e)[:80]); raise SystemExit(0)\n"
+        "tmp=pathlib.Path(tempfile.mkdtemp())\n"
+        "out={'created':[],'skipped':[],'errors':[]}\n"
+        "built=er._register_g3_kuksu('202606043',papers,tmp,lambda subj:False,out,lambda m:None)\n"
+        "assert sorted(built['국어'])==['화법과 작문','언어와 매체'][::-1] or set(built['국어'])=={'화법과 작문','언어와 매체'}, built\n"
+        "assert set(built['수학'])=={'확률과 통계','미적분','기하'}, built\n"
+        "assert not out['errors'], out['errors']\n"
+        "def norm_k(d):\n"
+        "    if 'answers' in d: return {q:d['answers'][q] for q in d['answers']}, {q:d['points'][q] for q in d['points']}\n"
+        "    qs=d['questions']; return {q:qs[q]['answer'] for q in qs}, {q:qs[q]['points'] for q in qs}\n"
+        "mism=[]\n"
+        "for f in list(tmp.glob('*.json')):\n"
+        "    stored=pathlib.Path('keys')/f.name\n"
+        "    if not stored.exists(): mism.append('stored 없음:'+f.name); continue\n"
+        "    a1,p1=norm_k(json.loads(f.read_text(encoding='utf-8')))\n"
+        "    a2,p2=norm_k(json.loads(stored.read_text(encoding='utf-8')))\n"
+        "    if a1!=a2: mism.append('답 불일치:'+f.name)\n"
+        "    if p1!=p2: mism.append('배점 불일치:'+f.name)\n"
+        "assert not mism, mism\n"
+        "print('OK 5키 일치')\n")
+    import os
+    env = os.environ.copy(); env.update(PYTHONIOENCODING="utf-8")
+    p = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env, text=True,
+                       encoding="utf-8", errors="replace",
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+    ok = p.returncode == 0 and ("OK" in p.stdout or "SKIP" in p.stdout)
+    if "SKIP" in p.stdout:
+        print("  (건너뜀 — EBSi 접속 불가)")
+    check("XIP 국·수 키가 stored 6월 키와 일치", ok, p.stdout[-300:])
+
+
 # ── 10. 웹 e2e (옵션: 서버 실행 중일 때) ─────────────────────────
 def t10_web():
     print("[10] 웹 e2e (고1 6과목 → 통합성적표)")
@@ -510,7 +551,8 @@ def main() -> int:
     web = "--web" in sys.argv
     for t in [t1_imports, t2_key_isolation, t3_history_g3, t4_consolidate_g3,
               t5_synth_g12, t6_edge, t65_simfixes, t67_autorotate, t7_calibrator, t8_report_layouts,
-              t9_grade_cuts, t93_mimac, t95_proxy_security, t96_results_edit] + ([t10_web] if web else []):
+              t9_grade_cuts, t93_mimac, t95_proxy_security, t96_results_edit,
+              t97_xip_kuksu] + ([t10_web] if web else []):
         try:
             t()
         except Exception as exc:

@@ -63,11 +63,17 @@ def probe_irecord(irecord: str, session: requests.Session | None = None) -> bool
 
 
 def find_irecord(year: int, month: int, grade: int) -> str | None:
-    """(연도, 월, 학년) → irecord. 확인된 규칙 YYYYMM04G 를 우선, 인접 시퀀스 폴백."""
+    """(연도, 월, 학년) → irecord = YYYY·MM·OO·G.
+
+    OO(시행 2자리 코드)는 주관 기관에 따라 달라진다 — 평가원(6·9월 모평)=04,
+    시도교육청 전국연합학력평가는 회차마다 다름(관측: 2026-07=08, 2025-07=10).
+    따라서 04 를 우선 시도하고, 이어서 01~20 을 관측 빈도순으로 전수 프로브한다.
+    (첫 히트를 반환 — 같은 (연·월·학년) 조합엔 시험이 하나뿐.)"""
     s = _session()
-    candidates = [f"{year}{month:02d}04{grade}"]          # 확인된 규칙
-    candidates += [f"{year}{month:02d}0{n}{grade}" for n in (1, 2, 3, 5, 6)]  # 폴백
-    for ir in candidates:
+    priority = [4, 8, 10, 11, 3, 7, 9, 1, 2, 5, 6, 12]     # 관측·추정 빈도순
+    codes = priority + [c for c in range(1, 21) if c not in priority]
+    for oo in codes:
+        ir = f"{year}{month:02d}{oo:02d}{grade}"
         if probe_irecord(ir, s):
             return ir
     return None
@@ -150,6 +156,73 @@ def _write_key_g12(irecord: str, subject: str, paper_id: str, keys_dir: Path,
     return payload
 
 
+# ── 고3 국어·수학 키: XIP 정답 API 기반(해설 PDF 레이아웃 비의존) ──────
+_XIP_TYPE = {"21": "objective", "31": "short"}   # TypeID → OMR 채점 유형
+_KOR_ELECTIVES = {"화법과 작문", "언어와 매체"}
+_MATH_ELECTIVES = {"확률과 통계", "미적분", "기하"}
+
+
+def _register_g3_kuksu(irecord: str, papers: dict[str, str], keys_dir: Path,
+                       has_key, out: dict, progress) -> dict:
+    """국·수 선택과목 키를 XIP 에서 생성. 반환 {'국어':[선택과목…], '수학':[…]}.
+
+    discover_papers 의 미지 subj_ 과목들 중 과목명(SubjectName)이 국·수 선택과목인
+    시험지를 골라 stored 스키마와 동일하게 저장한다(이미 있으면 건너뛰고 완비로 집계).
+    """
+    s = xip._session()
+    built = {"국어": [], "수학": []}
+    for key, pid in papers.items():
+        if not key.startswith("subj_"):
+            continue
+        try:
+            name, points, types, purl = xip.fetch_paper_detail(s, pid)
+        except Exception:
+            continue
+        if name in _KOR_ELECTIVES:
+            subj = "국어"
+        elif name in _MATH_ELECTIVES:
+            subj = "수학"
+        else:
+            continue
+        path = keys_dir / f"{irecord}_{subj}_{name.replace(' ', '')}.json"
+        if path.exists():
+            built[subj].append(name)
+            out["skipped"].append(f"{subj} {name}(이미 있음)")
+            continue
+        try:
+            progress(f"{subj} {name} 정답키 생성 중… (EBSi XIP)")
+            answers, _, aurl = xip.fetch_answers(s, pid)
+            if set(answers) != set(points):
+                raise RuntimeError(f"정답/배점 문항 불일치: {sorted(set(answers) ^ set(points))}")
+            if subj == "국어":
+                payload = {
+                    "exam_id": irecord, "subject": "국어", "elective": name,
+                    "max_score": round(sum(points.values())),
+                    "answers": {str(q): answers[q] for q in sorted(answers)},
+                    "points": {str(q): points[q] for q in sorted(points)},
+                    "source": {"xip_answer_api": aurl, "xip_paper_api": purl},
+                }
+            else:
+                questions = {
+                    str(q): {"answer": answers[q], "points": points[q],
+                             "type": _XIP_TYPE.get(types.get(q), "objective")}
+                    for q in sorted(answers)
+                }
+                payload = {
+                    "exam": f"irecord {irecord}", "subject": "수학", "elective": name,
+                    "irecord": irecord, "total": round(sum(points.values())),
+                    "questions": questions,
+                    "source": {"xip_answer_api": aurl, "xip_paper_api": purl},
+                }
+            keys_dir.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            built[subj].append(name)
+            out["created"].append(f"{subj} {name}")
+        except Exception as exc:
+            out["errors"].append(f"{subj} {name}: {exc}")
+    return built
+
+
 def register_exam(year: int, month: int, grade: int,
                   keys_dir: Path | None = None,
                   progress=lambda msg: None) -> dict:
@@ -212,24 +285,31 @@ def register_exam(year: int, month: int, grade: int,
     env_cmd = dict(cwd=ROOT, text=True, encoding="utf-8", errors="replace",
                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
 
-    # 국어 (화작/언매 — 해설 PDF 파서)
-    if not has_key("국어"):
-        progress("국어 정답키 추출 중… (EBSi 해설 PDF)")
+    # 국어·수학 — XIP(정답 API) 우선. 시도교육청 학평의 해설 PDF 레이아웃이
+    # 평가원과 달라 PDF 파서가 자주 실패하므로, 레이아웃 비의존인 XIP 로 먼저
+    # 생성하고 부족분만 기존 PDF 파서로 보강한다. (6월 평가원 키와 완전 일치 검증됨)
+    kuksu = _register_g3_kuksu(irecord, papers, keys_dir, has_key, out, progress)
+
+    if len(kuksu.get("국어", [])) >= 2:
+        pass  # 화작·언매 모두 XIP 로 확보
+    elif has_key("국어"):
+        out["skipped"].append("국어(이미 있음)")
+    else:
+        progress("국어 정답키 추출 중… (EBSi 해설 PDF 폴백)")
         url = f"{EBSI}/ebs/xip/xipa/retrieveSCVMainInfo.ebs?irecord={irecord}&targetCd={TARGET_CD[grade]}"
         p = subprocess.run([sys.executable, "ebsi_keys.py", url], **env_cmd)
         (out["created"] if p.returncode == 0 else out["errors"]).append(
             "국어" if p.returncode == 0 else f"국어: {p.stdout[-300:]}")
-    else:
-        out["skipped"].append("국어(이미 있음)")
 
-    # 수학 (확통/미적/기하 — 문제/해설 PDF 파서)
-    if not has_key("수학"):
-        progress("수학 정답키 추출 중… (EBSi 문제/해설 PDF)")
+    if len(kuksu.get("수학", [])) >= 3:
+        pass  # 확통·미적·기하 모두 XIP 로 확보
+    elif has_key("수학"):
+        out["skipped"].append("수학(이미 있음)")
+    else:
+        progress("수학 정답키 추출 중… (EBSi 문제/해설 PDF 폴백)")
         p = subprocess.run([sys.executable, "math_keys.py", irecord], **env_cmd)
         (out["created"] if p.returncode == 0 else out["errors"]).append(
             "수학" if p.returncode == 0 else f"수학: {p.stdout[-300:]}")
-    else:
-        out["skipped"].append("수학(이미 있음)")
 
     # XIP 과목 (영어·한국사·탐구류)
     for subject, paper_id in sorted(papers.items()):
