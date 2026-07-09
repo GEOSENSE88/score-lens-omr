@@ -104,15 +104,17 @@ def normalize_scan(img: np.ndarray) -> tuple[np.ndarray, bool]:
     - 명암 범위가 좁으면(1~99 백분위 < 160) 선형 스트레치 — 정상 스캔은 무변경.
     - 채도 평균이 극히 낮으면 흑백 스캔: 컬러 드롭아웃(인쇄 원 소거)이 불가능해
       판독 신뢰도가 떨어지므로 호출측이 '컬러 재스캔' 플래그를 달아야 한다."""
-    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # 통계는 4×4 서브샘플로 충분(≈50만 픽셀) — 전체 계산 대비 ~16배 절약
+    g = cv2.cvtColor(img[::4, ::4], cv2.COLOR_BGR2GRAY)
     lo, hi = np.percentile(g, 1), np.percentile(g, 99)
     # 어두운 스캔(백색점<235) 또는 저대비 스캔은 선형 스트레치로 정규화 —
     # 정상 스캔(백색점 ~255)은 무변경. 인쇄색 대비가 복원돼야 컬러 드롭아웃이
     # 안정적으로 동작한다(실측: -50 밝기에서 분홍 인쇄가 임계 근처까지 상승).
-    if hi < 235 or hi - lo < 160:
+    # hi-lo<30 인 균일 페이지(빈 페이지 등)는 스트레치가 노이즈만 증폭 → 제외
+    if (hi < 235 or hi - lo < 160) and hi - lo >= 30:
         img = np.clip((img.astype(np.float32) - lo) * (255.0 / max(1.0, hi - lo)),
                       0, 255).astype(np.uint8)
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(img[::4, ::4], cv2.COLOR_BGR2HSV)
     is_gray = float(hsv[..., 1].mean()) < 8.0
     return img, is_gray
 
@@ -161,15 +163,45 @@ def rectify_verified(img: np.ndarray, tmpl: dict) -> tuple[np.ndarray, dict]:
     # 0.4대까지 내려가지만 마진은 명확(실측 0.43 vs 0.23). 절대 하한은
     # 카드가 아예 아닌 페이지 방어용.
     ok = (s1 >= 0.55 and (s1 - s2) >= 0.05) or (s1 >= 0.35 and (s1 - s2) >= 0.12)
+    resolved_by = "profile"
     if not ok:
-        pretty = {k: round(v, 3) for k, v in scores.items()}
-        raise hp_align.AlignError(f"격자 검증 모호 (상관 {pretty})")
+        # 2차 판별: 상위 후보 k 각각으로 수험번호 학교코드(19718 고정)를 실제로
+        # 읽어본다 — 정확히 하나의 후보에서만 읽히면 그 후보 채택(읽기-검증).
+        # 저품질 스캔에서 프로파일 상관이 뭉개져도 마킹 자체는 뚜렷한 경우가
+        # 많아(실사용 corr 0.41 vs 0.30 마진 미달 사례) 경계 페이지를 회복한다.
+        k1 = _id_readback_pick(out, tmpl, pitch,
+                               [k for k, _ in ranked[:3] if scores[k] >= 0.30])
+        if k1 is None:
+            pretty = {k: round(v, 3) for k, v in scores.items()}
+            raise hp_align.AlignError(f"격자 검증 모호 (상관 {pretty})")
+        resolved_by = "id_readback"
+        s1 = scores[k1]
     if k1 != 0:
         M = np.array([[1, 0, -k1 * pitch], [0, 1, 0]], dtype=float)
         out = cv2.warpAffine(out, M, (out.shape[1], out.shape[0]),
                              borderValue=(255, 255, 255))
-    info = dict(info, grid_k=k1, grid_corr=round(s1, 3))
+    info = dict(info, grid_k=k1, grid_corr=round(s1, 3), grid_by=resolved_by)
     return out, info
+
+
+SCHOOL_CODE = 19718   # 산남고 — 수험번호 읽기-검증 기준
+
+
+def _id_readback_pick(img: np.ndarray, tmpl: dict, pitch: float,
+                      cands: list[int]) -> int | None:
+    """후보 시프트들로 수험번호를 읽어 학교코드가 일치하는 '유일한' 후보를 반환."""
+    idg = next((g for g in tmpl.get("grids", []) if g["name"] == "id"), None)
+    if idg is None or not cands:
+        return None
+    import hp_id
+    gray = pencil_gray(img)
+    hits = []
+    for k in cands:
+        xs = [x + k * pitch for x in idg["xs"]]
+        rid = hp_id.read_id(gray, dict(idg, xs=xs))
+        if rid.get("school") == SCHOOL_CODE:
+            hits.append(k)
+    return hits[0] if len(hits) == 1 else None
 
 
 def rectified_pages(pdf: Path, ref: dict, limit: int | None = None,
@@ -318,8 +350,10 @@ def pencil_gray(img: np.ndarray) -> np.ndarray:
     밝은 컬러 인쇄(빈 마킹칸 원: V≈253)는 백지에 수렴하고, 필기(사인펜·연필,
     스캔에서 색이 끼어도 V≈170 이하로 어두움)만 신호로 남는다. 실측(7월 학평
     국어 카드): 마킹 V중앙 172 / 인쇄원 253 / 바탕 255. 유채색 픽셀 분류
-    방식은 어두운 적갈색 마킹까지 지워 폐기."""
-    return img.max(axis=2)
+    방식은 어두운 적갈색 마킹까지 지워 폐기.
+    (cv2.max 2회가 numpy max(axis=2) 대비 ~5배 빠름 — 페이지당 최대 단일 비용)"""
+    b, g, r = cv2.split(img)
+    return cv2.max(cv2.max(b, g), r)
 
 
 def adaptive_fill_min(tops: list[float]) -> float:
@@ -330,11 +364,13 @@ def adaptive_fill_min(tops: list[float]) -> float:
     return min(FILL_MIN, max(FILL_FLOOR, 0.45 * level))
 
 
-def read_objective(img: np.ndarray, tmpl: dict) -> dict[int, int]:
+def read_objective(img: np.ndarray, tmpl: dict,
+                   gray: np.ndarray | None = None) -> dict[int, int]:
     """{문항: 답(0=미마킹, -1=중복, 1~5)}.
 
     전제: img 는 rectify(타이밍마크 아핀 정렬)를 거쳐 템플릿 좌표계와 일치.
     - darkness 는 빨강 인쇄를 백지화한 회색조에서 측정(인쇄원 오검 차단).
+      gray 에 pencil_gray(img) 를 미리 계산해 넘기면 재계산을 생략한다.
     - 임계는 학생별 적응: 그 페이지 마킹 농도 중앙값의 45% (하한 FILL_FLOOR,
       상한 FILL_MIN) — 흐린 연필 학생도, 진한 사인펜 학생도 같은 규칙.
     - 잔여 미세오차만 (y±12) 근방 최대 darkness 로 흡수. 블록 세로 스냅은
@@ -342,7 +378,8 @@ def read_objective(img: np.ndarray, tmpl: dict) -> dict[int, int]:
     """
     if img.ndim == 2:
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    gray = pencil_gray(img)
+    if gray is None:
+        gray = pencil_gray(img)
     # 1차: 전 문항 darkness 행렬 수집
     rows = []  # (q, [dk×5])
     for blk in tmpl["objective"]:

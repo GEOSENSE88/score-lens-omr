@@ -161,30 +161,43 @@ def read_id(gray: np.ndarray, grid: dict) -> dict:
                 ban=join(d[6:8]), num=join(d[8:10]), raw=d)
 
 
-def read_name(gray: np.ndarray, grid: dict, fill_min: float = 50.0) -> str:
-    """성명 그리드(음절 4 × [초성|중성|종성] 3열, 자모 21행) → 한글 이름.
+def read_name(gray: np.ndarray, grid: dict, fill_min: float = 50.0) -> dict:
+    """성명 그리드(음절 4 × [초성|중성|종성] 3열, 자모 21행) → 판독 결과.
 
     자모 세로 배열은 평가원 카드와 동일(초성 19 / 중성 21 / 종성 21)임을
-    실측으로 확인(2026-07 학평 카드, '권세진'·'권지연' 수동 대조)."""
+    실측으로 확인(2026-07 학평 카드, '권세진'·'권지연' 수동 대조).
+
+    반환: {name, ok, issues[]} — **조용한 이름 생성 금지**:
+      - 초성은 마킹됐는데 중성이 임계 미달 → 그 음절 '?' + issue (기본 ㅏ 대체 않음)
+      - 한 열에 임계 이상이 2개고 1·2위 차이가 근소 → 중복 issue
+    ok=False 인 이름은 호출측이 성명으로 쓰지 말고 검토 플래그를 달아야 한다."""
     import name_reader as nr
     xs, ys = grid["xs"], grid["ys"]
 
     def pick(x: float, nrows: int):
         d = [max(oc._darkness(gray, x, y + dy, 13) for dy in (-10, 0, 10))
              for y in ys[:nrows]]
-        i = int(np.argmax(d))
-        return i, d[i]
+        order = sorted(range(nrows), key=lambda i: -d[i])
+        top, second = d[order[0]], d[order[1]]
+        dup = top >= fill_min and second >= fill_min and top < 1.6 * second
+        return order[0], top, dup
 
-    out = []
+    out, issues = [], []
     for s in range(4):
-        ci, cd = pick(xs[3 * s], len(nr.CHO))
+        ci, cd, cdup = pick(xs[3 * s], len(nr.CHO))
         if cd < fill_min:
             break                          # 초성 공란 → 이름 끝
-        ji, jd = pick(xs[3 * s + 1], len(nr.JUNG))
-        ki, kd = pick(xs[3 * s + 2], len(nr.JONG_COL))
+        ji, jd, jdup = pick(xs[3 * s + 1], len(nr.JUNG))
+        ki, kd, kdup = pick(xs[3 * s + 2], len(nr.JONG_COL))
+        if jd < fill_min:                  # 초성만 있고 중성 미달 — 조합 금지
+            issues.append(f"{s + 1}음절 중성 미판독")
+            out.append("?")
+            continue
+        if cdup or jdup or (kd >= fill_min and kdup):
+            issues.append(f"{s + 1}음절 자모 중복의심")
         jong = nr.JONG_INDEX.get(nr.JONG_COL[ki], 0) if kd >= fill_min else 0
-        out.append(nr.compose(ci, ji if jd >= fill_min else 0, jong))
-    return "".join(out)
+        out.append(nr.compose(ci, ji, jong))
+    return dict(name="".join(out), ok=not issues, issues=issues)
 
 
 def read_short_answer(gray: np.ndarray, grid: dict) -> int | None:

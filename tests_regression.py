@@ -602,12 +602,24 @@ def t10_web():
     check(f"통합성적표 대조 {ok}/{total}", total == 36 and ok == 36)
 
 
+def t100_hp_units():
+    """[10.0] 고3 학평(hp_*) 단위 테스트 — 합성 이미지 기반 (tests_hp.py)"""
+    print("[10.0] 고3 학평 판독 단위 테스트 (성명·수험번호·단답형·흑백감지·정렬매칭)")
+    import subprocess
+    r = subprocess.run([sys.executable, "-X", "utf8", str(ROOT / "tests_hp.py")],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    tail = (r.stdout or "").strip().splitlines()[-1] if r.stdout else ""
+    check(f"tests_hp 전체 통과 ({tail})", r.returncode == 0,
+          (r.stdout or "")[-800:] + (r.stderr or "")[-400:])
+
+
 def main() -> int:
     web = "--web" in sys.argv
     for t in [t1_imports, t2_key_isolation, t3_history_g3, t4_consolidate_g3,
               t5_synth_g12, t6_edge, t65_simfixes, t67_autorotate, t7_calibrator, t8_report_layouts,
               t9_grade_cuts, t93_mimac, t95_proxy_security, t96_results_edit,
-              t97_xip_kuksu, t98_multi_pdf_merge, t99_chunked_upload] + ([t10_web] if web else []):
+              t97_xip_kuksu, t98_multi_pdf_merge, t99_chunked_upload,
+              t100_hp_units] + ([t10_web] if web else []):
         try:
             t()
         except Exception as exc:

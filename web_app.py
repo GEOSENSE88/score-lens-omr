@@ -42,8 +42,24 @@ import exam_registry as er
 
 
 ROOT = Path(__file__).resolve().parent
-UPLOAD_ROOT = ROOT / "uploads"
-WEB_OUTPUT_ROOT = ROOT / "output" / "web_runs"
+
+
+def _work_base() -> Path:
+    """업로드·작업 파일 위치. OneDrive 안에서 돌면 동기화 충돌·지연이 크므로
+    로컬 앱데이터로 이탈시킨다(OMR_WORK_DIR 로 명시 지정 가능). 서버(리눅스)는
+    ROOT 그대로."""
+    env = os.environ.get("OMR_WORK_DIR", "").strip()
+    if env:
+        return Path(env)
+    if "onedrive" in str(ROOT).lower():
+        base = Path(os.environ.get("LOCALAPPDATA", str(ROOT))) / "OMRLens"
+        return base
+    return ROOT
+
+
+WORK_BASE = _work_base()
+UPLOAD_ROOT = WORK_BASE / "uploads"
+WEB_OUTPUT_ROOT = WORK_BASE / "output" / "web_runs"
 ALLOWED_EXTENSIONS = {".pdf", ".csv"}
 
 # ── 배포 설정 (환경변수) ──────────────────────────────────────────
@@ -393,7 +409,8 @@ _PROG_RE = re.compile(r"^PROGRESS\s+(\d+)\s*/\s*(\d+)\s*$")
 
 
 def run_reader(spec: dict, pdf: Path, *, exam_id: str | None, names: Path | None,
-               out_root: Path, dpi: int, on_progress=None) -> SubjectRun:
+               out_root: Path, dpi: int, on_progress=None,
+               workers: int | None = None) -> SubjectRun:
     """과목 판독 스크립트를 서브프로세스로 실행하고 산출물을 수집.
 
     러너가 stdout 에 흘리는 'PROGRESS n/total' 을 실시간 파싱해
@@ -418,6 +435,8 @@ def run_reader(spec: dict, pdf: Path, *, exam_id: str | None, names: Path | None
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
+    if workers:
+        env["OMR_WORKERS"] = str(workers)   # 과목 동시 실행 시 페이지 워커 분할
     proc = subprocess.Popen(cmd, cwd=ROOT, env=env, text=True, encoding="utf-8",
                             errors="replace", stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, bufsize=1)
@@ -549,31 +568,55 @@ def process_job(job_id: str, run_output_dir: Path, grade: int,
         append_event(job_id, f"고{grade} 답안지 {len(requested)}과목 채점을 시작합니다 "
                              f"— {card} 카드로 판독", kind="info")
 
-        # 국어를 먼저 돌려 성명 CSV 를 나머지 과목에 자동 연결 (별도 업로드 없을 때)
-        ordered = sorted(requested, key=lambda x: x[0]["key"] != "korean")
-        effective_names = names
-        done = 0
-        for spec, pdf in ordered:
+        # 성명 체이닝을 위해 국어만 먼저, 나머지 과목은 동시 실행(벽시계 단축).
+        # (명단 CSV 가 있으면 전 과목을 처음부터 동시 실행)
+        subs: dict[str, dict] = {}
+        lock = threading.Lock()
+
+        def _prog(label, d=None, t=None):
+            with lock:
+                if d is None:
+                    subs.pop(label, None)
+                else:
+                    subs[label] = dict(label=label, done=d, total=t)
+                update_job(job_id, subs=dict(subs))
+
+        def _exec(spec, pdf, nm, nworkers):
             append_event(job_id, f"{spec['label']}: OMR 마킹 판독 중…", kind="run")
-            run = run_reader(spec, pdf, exam_id=exam_id, names=effective_names,
-                             out_root=run_output_dir, dpi=dpi,
-                             on_progress=lambda d, t, lb=spec["label"]:
-                                 update_job(job_id, sub=dict(label=lb, done=d, total=t)))
-            update_job(job_id, sub=None)
-            runs.append(run)
-            done += 1
-            update_job(job_id, completed=done,
-                       runs=[asdict(r) | {"ok": r.ok} for r in runs])
+            run = run_reader(spec, pdf, exam_id=exam_id, names=nm,
+                             out_root=run_output_dir, dpi=dpi, workers=nworkers,
+                             on_progress=lambda d, t, lb=spec["label"]: _prog(lb, d, t))
+            _prog(spec["label"])              # 진행표시 제거
+            with lock:
+                runs.append(run)
+                update_job(job_id, completed=len(runs),
+                           runs=[asdict(r) | {"ok": r.ok} for r in runs])
             if not run.ok:
                 append_event(job_id, f"{spec['label']}: 판독 실패 — 실행 로그를 확인하세요.", kind="error")
-                continue
+                return run
             csv_path = _find_csv(run, spec["csv_suffix"])
             if csv_path:
-                csv_by_kind[spec["csv_kind"]] = csv_path
-            if spec["key"] == "korean" and effective_names is None and csv_path:
-                effective_names = Path(csv_path)   # 성명 자동 체이닝
-                append_event(job_id, "국어 점수표의 성명을 나머지 과목에 자동 연결합니다.")
+                with lock:
+                    csv_by_kind[spec["csv_kind"]] = csv_path
             append_event(job_id, f"{spec['label']}: 채점 완료 ✓", kind="ok")
+            return run
+
+        auto = max(2, min(10, (os.cpu_count() or 8) // 2))
+        effective_names = names
+        rest = list(requested)
+        korean = next(((s, p) for s, p in requested if s["key"] == "korean"), None)
+        if effective_names is None and korean is not None:
+            rest = [(s, p) for s, p in requested if s["key"] != "korean"]
+            run = _exec(korean[0], korean[1], None, auto)
+            if run.ok and csv_by_kind.get(korean[0]["csv_kind"]):
+                effective_names = Path(csv_by_kind[korean[0]["csv_kind"]])
+                append_event(job_id, "국어 판독 성명을 나머지 과목에 자동 연결합니다.")
+        if rest:
+            conc = 2 if len(rest) >= 2 else 1
+            per = max(2, auto // conc)
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=conc) as ex:
+                list(ex.map(lambda sp: _exec(sp[0], sp[1], effective_names, per), rest))
 
         # 통합성적표 (대교협 + UNIV + 정오표) — 편집 가능한 학생 상태로 보관
         combined_ok = False

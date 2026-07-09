@@ -301,15 +301,16 @@ function poll(url){
 }
 
 function renderProgress(j){
-  // 과목 단위 + 진행 중 과목의 페이지 단위(sub)를 합쳐 부드러운 진행률
+  // 과목 단위 + 진행 중 과목들의 페이지 단위(subs)를 합쳐 부드러운 진행률
   let frac = j.completed || 0;
-  if (j.sub && j.sub.total) frac += Math.min(1, j.sub.done / j.sub.total);
+  const subs = Object.values(j.subs || {}).filter(s => s && s.total);
+  subs.forEach(s => { frac += Math.min(1, s.done / s.total); });
   const pct = j.total ? Math.min(90, Math.round((frac / j.total) * 90))
                         + (j.status === "done" ? 10 : 0) : 0;
   $("#progFill").style.width = pct + "%";
   $("#progPct").textContent = pct + "%";
-  $("#progText").textContent = (j.sub && j.sub.total)
-    ? `${j.sub.label} 판독 중 — ${j.sub.done}/${j.sub.total}장`
+  $("#progText").textContent = subs.length
+    ? subs.map(s => `${s.label} ${s.done}/${s.total}장`).join(" · ") + " 판독 중"
     : (j.message || "");
   const tl = $("#timeline");
   tl.innerHTML = (j.events || []).map(ev =>

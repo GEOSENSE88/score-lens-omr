@@ -43,45 +43,48 @@ SUBJ_SETUP = {  # 과목 라벨 → (템플릿들, hp_run kind, csv 파일명 su
 _W: dict = {}
 
 
-def _winit(pdf_path: str, tnames: list[str], kind: str):
+def _winit(pdf_path: str, tnames: list[str], kind: str, dpi: int = 300):
+    import os
+    # 프로세스 병렬 × OpenCV 내부 스레드 과경쟁 조절 (실측상 1~4 차이는 노이즈
+    # 수준 — vCPU 적은 서버에 안전한 1을 기본값으로)
+    cv2.setNumThreads(int(os.environ.get("OMR_CV_THREADS", "1")))
     _W["doc"] = fitz.open(pdf_path)
     _W["tmpls"] = [json.loads((HERE / "templates" / f"{n}.json").read_text(encoding="utf-8"))
                    for n in tnames]
     _W["kind"] = kind
+    _W["dpi"] = dpi
 
 
 def _wpage(i: int) -> dict:
-    pix = _W["doc"][i].get_pixmap(dpi=300)
+    pix = _W["doc"][i].get_pixmap(dpi=_W["dpi"])
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
     img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR if pix.n == 4 else cv2.COLOR_RGB2BGR)
     try:
         out, info = hp_g3.rectify_verified(img, _W["tmpls"][0])
     except hp_align.AlignError as e:
         return dict(page=i, error=f"정렬실패:{e}")
-    rec = hp_run.read_page(_W["kind"], _W["tmpls"], out)
+    rec = hp_run.read_page(_W["kind"], _W["tmpls"], out)   # 성명 포함(단일 gray)
     if info.get("gray_scan"):
         rec["gray_scan"] = True
-    ng = next((g for g in _W["tmpls"][0].get("grids", []) if g["name"] == "name"), None)
-    if ng is not None:
-        rec["name"] = hp_id.read_name(hp_g3.pencil_gray(out), ng)
     rec["page"] = i
     return rec
 
 
-def read_pdf(pdf: Path, tnames: list[str], kind: str, workers: int) -> list[dict]:
+def read_pdf(pdf: Path, tnames: list[str], kind: str, workers: int,
+             dpi: int = 300) -> list[dict]:
     doc = fitz.open(str(pdf))
     n = doc.page_count
     doc.close()
     recs = []
     if workers <= 1:
-        _winit(str(pdf), tnames, kind)
+        _winit(str(pdf), tnames, kind, dpi)
         for i in range(n):
             recs.append(_wpage(i))
             print(f"PROGRESS {i + 1}/{n}", flush=True)
         _W["doc"].close()
     else:
-        with Pool(processes=workers, initializer=_winit,
-                  initargs=(str(pdf), tnames, kind)) as pool:
+        with Pool(processes=min(workers, n), initializer=_winit,
+                  initargs=(str(pdf), tnames, kind, dpi)) as pool:
             for k, rec in enumerate(pool.imap_unordered(_wpage, range(n)), 1):
                 recs.append(rec)
                 print(f"PROGRESS {k}/{n}", flush=True)
@@ -103,13 +106,28 @@ def _load_names(path: Path | None) -> dict:
     return out
 
 
-def _ident(rec: dict, names: dict) -> dict:
+def _ident(rec: dict, names: dict) -> tuple[dict, list[str]]:
+    """(신원 dict, 성명 관련 플래그). 조용한 이름 생성 금지 —
+    카드 판독 성명은 신뢰(ok)될 때만 쓰고, 명단이 있으면 대조 경고에 활용."""
     sid = rec.get("id") or {}
     ban = "" if sid.get("ban") is None else str(sid["ban"])
     num = "" if sid.get("num") is None else str(sid["num"])
-    # 성명: 명단 CSV 우선, 없으면 카드의 성명 그리드 판독값
-    return {"반": ban, "번호": num,
-            "성명": names.get((ban, num), "") or rec.get("name", "")}
+    nrec = rec.get("name") or {}
+    card = nrec.get("name", "")
+    roster = names.get((ban, num), "")
+    fl: list[str] = []
+    norm = lambda s: str(s or "").replace(" ", "")
+    if roster:
+        final = roster
+        if nrec.get("ok") and card and norm(card) != norm(roster):
+            fl.append(f"성명대조불일치(카드판독:{card})")
+    elif nrec.get("ok") and card:
+        final = card
+    else:
+        final = ""
+        if card or nrec.get("issues"):
+            fl.append("성명판독불가:" + ",".join(nrec.get("issues") or ["약한 마킹"]))
+    return {"반": ban, "번호": num, "성명": final}, fl
 
 
 def _flags(rec: dict, ident: dict) -> list[str]:
@@ -137,12 +155,12 @@ def rows_for(kind: str, recs: list[dict], keys: dict, names: dict) -> list[dict]
             rows.append({"반": "", "번호": "", "성명": f"⚠판독실패 p{rec['page'] + 1}",
                          "확인필요": rec["error"]})
             continue
-        ident = _ident(rec, names)
+        ident, name_flags = _ident(rec, names)
         main = rec.get("ans") or rec.get("ans1") or {}
         if hp_run.is_blank(main) and not ident["반"] and not ident["번호"] \
                 and (kind != "explore" or hp_run.is_blank(rec.get("ans2", {0: 0}))):
             continue                       # 백지(결시) 카드 — 명부에서 제외
-        fl = _flags(rec, ident)
+        fl = _flags(rec, ident) + name_flags
         row = dict(ident)
         if kind == "history":
             key = keys["history"]
@@ -242,6 +260,26 @@ def write_outputs(rows: list[dict], out_dir: Path, stem: str, suffix: str, label
     return csv_path
 
 
+def _write_meta(out_dir: Path, tnames: list[str]) -> None:
+    """재현성 기록: 코드 버전(git) + 템플릿 해시 — 결과물이 어느 보정본으로
+    만들어졌는지 추적 가능하게 한다."""
+    import hashlib
+    import subprocess
+    try:
+        rev = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=HERE,
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        rev = ""
+    tmpl_hash = {}
+    for n in tnames:
+        p = HERE / "templates" / f"{n}.json"
+        if p.exists():
+            tmpl_hash[n] = hashlib.sha256(p.read_bytes()).hexdigest()[:12]
+    (out_dir / "run_meta.json").write_text(json.dumps(
+        dict(code_rev=rev, templates=tmpl_hash), ensure_ascii=False, indent=1),
+        encoding="utf-8")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("pdf", type=Path)
@@ -252,8 +290,10 @@ def main() -> int:
     ap.add_argument("--names", type=Path, default=None)
     ap.add_argument("--dpi", type=int, default=300)      # 웹 호환(현재 300 고정 렌더)
     ap.add_argument("--template", default=None)          # 웹 호환(템플릿은 과목으로 결정)
+    import os
+    auto = max(1, min(10, (cpu_count() or 8) // 2))   # ≈물리코어, 상한 10
     ap.add_argument("--workers", type=int,
-                    default=max(1, min(6, (cpu_count() or 4) - 2)))
+                    default=int(os.environ.get("OMR_WORKERS", "0")) or auto)
     a = ap.parse_args()
 
     tnames, kind, suffix = SUBJ_SETUP[a.subject]
@@ -263,10 +303,11 @@ def main() -> int:
     names = _load_names(a.names)
     a.out.mkdir(parents=True, exist_ok=True)
 
-    print(f"{a.subject}: 학평 카드 판독 시작 ({a.pdf.name}, workers={a.workers})", flush=True)
-    recs = read_pdf(a.pdf, tnames, kind, a.workers)
+    print(f"{a.subject}: 학평 카드 판독 시작 ({a.pdf.name}, workers={a.workers}, dpi={a.dpi})", flush=True)
+    recs = read_pdf(a.pdf, tnames, kind, a.workers, dpi=a.dpi)
     rows = rows_for(kind, recs, keys, names)
     csv_path = write_outputs(rows, a.out, a.pdf.stem, suffix, a.subject)
+    _write_meta(a.out, tnames)
 
     nfail = sum(1 for r in recs if r.get("error"))
     nflag = sum(1 for r in rows if r.get("확인필요"))

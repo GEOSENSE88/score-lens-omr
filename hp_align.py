@@ -77,7 +77,11 @@ def _chain_score(inliers: np.ndarray) -> int:
 
 def coarse_orient(bgr: np.ndarray):
     """4방향 중 타이밍마크 사슬이 가장 뚜렷한 방향으로 회전+REF 크기 통일.
-    반환: (img, inlier_marks, slope). 사슬이 어디에도 없으면 AlignError."""
+    반환: (img, inlier_marks, slope). 사슬이 어디에도 없으면 AlignError.
+
+    정방향(무회전)에서 강한 사슬(≥25)이 나오면 나머지 회전 검사를 생략 —
+    스캔 대부분이 정방향이라 방향판별 비용(페이지 판독의 ~38%)을 크게 줄인다.
+    (오방향 페이지의 상단엔 클럭트랙이 없어 25개 등간격 사슬이 나올 수 없음)"""
     best = None
     for rot in (None, cv2.ROTATE_180, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE):
         img = bgr if rot is None else cv2.rotate(bgr, rot)
@@ -93,6 +97,8 @@ def coarse_orient(bgr: np.ndarray):
         score = _chain_score(inl) if resid < 8 else 0
         if best is None or score > best[0]:
             best = (score, img, inl, slope)
+        if rot is None and score >= 25:
+            break                                      # 정방향 확정 — 조기 종료
     if best is None or best[0] < 12:
         raise AlignError(f"타이밍마크 사슬 미검출 (최대 사슬 {0 if best is None else best[0]}개)")
     return best[1], best[2], best[3]
@@ -164,20 +170,28 @@ def _match_to_ref(xr: np.ndarray, ref_xs: np.ndarray):
     d = (ref_xs[None, :] - s0 * xr[:, None]).ravel()
     hist, edges = np.histogram(d, bins=np.arange(d.min() - 10, d.max() + 10, 8))
     b0 = float(edges[np.argmax(hist)] + 4)
-    # 상호 최근접 매칭 → 최소자승 재적합 2회
+    # 1:1 매칭(기준 마크당 입력 마크 1개 — 잔차 최소인 것) → 최소자승 재적합 2회.
+    # 최근접만 쓰면 여러 입력이 같은 기준 마크에 몰려 nmatch 가 부풀고,
+    # 불량 정렬이 QC 를 통과할 수 있다.
     s, b = s0, b0
     pairs = None
     for _ in range(2):
         proj = s * xr + b
         idx = np.abs(ref_xs[None, :] - proj[:, None]).argmin(axis=1)
-        res = ref_xs[idx] - proj
-        ok = np.abs(res) < 14
-        if ok.sum() < 8:
+        res = np.abs(ref_xs[idx] - proj)
+        keep, seen = [], set()
+        for j in np.argsort(res):                 # 잔차 작은 순으로 기준마크 선점
+            if res[j] < 14 and idx[j] not in seen:
+                seen.add(int(idx[j]))
+                keep.append(j)
+        if len(keep) < 8:
             return None
-        pairs = (xr[ok], ref_xs[idx[ok]])
+        keep = np.array(keep)
+        pairs = (xr[keep], ref_xs[idx[keep]])
         s, b = np.polyfit(pairs[0], pairs[1], 1)
-    proj = s * pairs[0] + b
-    return float(s), float(b), int(len(pairs[0])), float(np.median(np.abs(pairs[1] - proj)))
+    resid = np.abs(pairs[1] - (s * pairs[0] + b))
+    return (float(s), float(b), int(len(pairs[0])),
+            float(np.median(resid)), float(np.percentile(resid, 90)))
 
 
 def rectify(bgr: np.ndarray, ref: dict) -> tuple[np.ndarray, dict]:
@@ -194,12 +208,14 @@ def rectify(bgr: np.ndarray, ref: dict) -> tuple[np.ndarray, dict]:
     m = _match_to_ref(np.sort(xr), ref_xs)
     if m is None:
         raise AlignError("기준 마크열 매칭 실패")
-    s, b, nmatch, resid = m
+    s, b, nmatch, resid, resid_p90 = m
     need = max(12, int(0.6 * len(ref_xs)))
     if nmatch < need:
         raise AlignError(f"매칭 마크 부족 ({nmatch}/{len(ref_xs)}, 필요 {need})")
     if resid > 3.0:
-        raise AlignError(f"매칭 잔차 과대 ({resid:.1f}px)")
+        raise AlignError(f"매칭 잔차 과대 (중앙값 {resid:.1f}px)")
+    if resid_p90 > 6.0:
+        raise AlignError(f"매칭 잔차 과대 (p90 {resid_p90:.1f}px)")
     if abs(math.degrees(th)) > MAX_ANGLE:
         raise AlignError(f"기울기 과대 ({math.degrees(th):.2f}°)")
     if abs(s - 1) > MAX_SCALE_DEV:
@@ -214,5 +230,6 @@ def rectify(bgr: np.ndarray, ref: dict) -> tuple[np.ndarray, dict]:
     out = cv2.warpAffine(img, M, (REF_W, REF_H),
                          flags=cv2.INTER_AREA, borderValue=(255, 255, 255))
     info = dict(angle=round(math.degrees(th), 3), scale=round(s, 4),
-                dx=round(b, 1), dy=round(dy, 1), nmatch=nmatch, resid=round(resid, 2))
+                dx=round(b, 1), dy=round(dy, 1), nmatch=nmatch,
+                resid=round(resid, 2), resid_p90=round(resid_p90, 2))
     return out, info

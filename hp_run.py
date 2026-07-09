@@ -102,30 +102,36 @@ def sel_of(tmpl: dict, name: str) -> dict | None:
 
 
 def read_page(kind: str, tmpls: list[dict], img: np.ndarray) -> dict:
-    """페이지 1장 판독 → {id, choice/codes, ans(들), sa(단답)}."""
+    """페이지 1장 판독 → {id, name, choice/codes, ans(들), sa(단답)}.
+
+    pencil_gray 는 여기서 한 번만 계산해 모든 판독(수험번호·성명·답란·단답·
+    선택)에 공유한다 — 페이지당 3중 계산이 판독 시간의 ~40% 였음(CODEX 프로파일)."""
     gray = hp_g3.pencil_gray(img)
     rec: dict = {}
     idg = grid_of(tmpls[0], "id")
     if idg:
         rec["id"] = hp_id.read_id(gray, idg)
+    ng = grid_of(tmpls[0], "name")
+    if ng:
+        rec["name"] = hp_id.read_name(gray, ng)   # {name, ok, issues}
     if kind == "korean":
         rec["choice"] = hp_id.read_select(gray, sel_of(tmpls[0], "choice"))
-        rec["ans"] = hp_g3.read_objective(img, tmpls[0])
+        rec["ans"] = hp_g3.read_objective(img, tmpls[0], gray=gray)
     elif kind == "math":
         rec["choice"] = hp_id.read_select(gray, sel_of(tmpls[0], "choice"))
-        rec["ans"] = hp_g3.read_objective(img, tmpls[0])
+        rec["ans"] = hp_g3.read_objective(img, tmpls[0], gray=gray)
         rec["sa"] = {int(g["name"][2:]): hp_id.read_short_answer(gray, g)
                      for g in tmpls[0]["grids"] if g["name"].startswith("sa")}
     elif kind == "explore":
-        rec["ans1"] = hp_g3.read_objective(img, tmpls[0])
-        rec["ans2"] = hp_g3.read_objective(img, tmpls[1])
+        rec["ans1"] = hp_g3.read_objective(img, tmpls[0], gray=gray)
+        rec["ans2"] = hp_g3.read_objective(img, tmpls[1], gray=gray)
         for i, tm in enumerate(tmpls, 1):
             cg = grid_of(tm, "code")
             d = hp_id.read_digit_grid(gray, cg)
             rec[f"code{i}"] = (None if any(v is None or v == -1 for v in d)
                                else d[0] * 10 + d[1])
     else:  # history / english
-        rec["ans"] = hp_g3.read_objective(img, tmpls[0])
+        rec["ans"] = hp_g3.read_objective(img, tmpls[0], gray=gray)
     return rec
 
 
