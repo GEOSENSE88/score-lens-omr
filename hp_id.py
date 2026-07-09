@@ -161,6 +161,32 @@ def read_id(gray: np.ndarray, grid: dict) -> dict:
                 ban=join(d[6:8]), num=join(d[8:10]), raw=d)
 
 
+def read_name(gray: np.ndarray, grid: dict, fill_min: float = 50.0) -> str:
+    """성명 그리드(음절 4 × [초성|중성|종성] 3열, 자모 21행) → 한글 이름.
+
+    자모 세로 배열은 평가원 카드와 동일(초성 19 / 중성 21 / 종성 21)임을
+    실측으로 확인(2026-07 학평 카드, '권세진'·'권지연' 수동 대조)."""
+    import name_reader as nr
+    xs, ys = grid["xs"], grid["ys"]
+
+    def pick(x: float, nrows: int):
+        d = [max(oc._darkness(gray, x, y + dy, 13) for dy in (-10, 0, 10))
+             for y in ys[:nrows]]
+        i = int(np.argmax(d))
+        return i, d[i]
+
+    out = []
+    for s in range(4):
+        ci, cd = pick(xs[3 * s], len(nr.CHO))
+        if cd < fill_min:
+            break                          # 초성 공란 → 이름 끝
+        ji, jd = pick(xs[3 * s + 1], len(nr.JUNG))
+        ki, kd = pick(xs[3 * s + 2], len(nr.JONG_COL))
+        jong = nr.JONG_INDEX.get(nr.JONG_COL[ki], 0) if kd >= fill_min else 0
+        out.append(nr.compose(ci, ji if jd >= fill_min else 0, jong))
+    return "".join(out)
+
+
 def read_short_answer(gray: np.ndarray, grid: dict) -> int | None:
     """수학 단답형(백·십·일 3열): 마킹 숫자 → 정수. 규정상 빈 상위자리 허용
     (한 자리 답은 일의 자리만, 또는 십의자리 0 표기). 전체 미마킹은 None,

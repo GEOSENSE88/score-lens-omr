@@ -26,6 +26,7 @@ import fitz
 
 import hp_align
 import hp_g3
+import hp_id
 import hp_run
 
 HERE = Path(__file__).resolve().parent
@@ -54,10 +55,15 @@ def _wpage(i: int) -> dict:
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
     img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR if pix.n == 4 else cv2.COLOR_RGB2BGR)
     try:
-        out, _ = hp_g3.rectify_verified(img, _W["tmpls"][0])
+        out, info = hp_g3.rectify_verified(img, _W["tmpls"][0])
     except hp_align.AlignError as e:
         return dict(page=i, error=f"정렬실패:{e}")
     rec = hp_run.read_page(_W["kind"], _W["tmpls"], out)
+    if info.get("gray_scan"):
+        rec["gray_scan"] = True
+    ng = next((g for g in _W["tmpls"][0].get("grids", []) if g["name"] == "name"), None)
+    if ng is not None:
+        rec["name"] = hp_id.read_name(hp_g3.pencil_gray(out), ng)
     rec["page"] = i
     return rec
 
@@ -101,7 +107,9 @@ def _ident(rec: dict, names: dict) -> dict:
     sid = rec.get("id") or {}
     ban = "" if sid.get("ban") is None else str(sid["ban"])
     num = "" if sid.get("num") is None else str(sid["num"])
-    return {"반": ban, "번호": num, "성명": names.get((ban, num), "")}
+    # 성명: 명단 CSV 우선, 없으면 카드의 성명 그리드 판독값
+    return {"반": ban, "번호": num,
+            "성명": names.get((ban, num), "") or rec.get("name", "")}
 
 
 def _flags(rec: dict, ident: dict) -> list[str]:
@@ -109,6 +117,8 @@ def _flags(rec: dict, ident: dict) -> list[str]:
     sid = rec.get("id") or {}
     if rec.get("error"):
         fl.append(rec["error"])
+    if rec.get("gray_scan"):
+        fl.append("흑백스캔(컬러 재스캔 권장)")
     if sid.get("school") not in (None, 19718):
         fl.append(f"학교번호이상:{sid.get('school')}")
     if not ident["반"] or not ident["번호"]:
