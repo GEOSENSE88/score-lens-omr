@@ -1,0 +1,35 @@
+{
+ "name": "expl1_g3hp",
+ "subject": "탐구1",
+ "grade": "고3 학평(인천 전국연합)",
+ "objective": [
+  {
+   "q0": 1,
+   "nrows": 20,
+   "x_lo": 2130,
+   "x_hi": 2420,
+   "y_lo": 200,
+   "y_hi": 2400
+  }
+ ],
+ "grids": [
+  {
+   "name": "id",
+   "ncols": 10,
+   "nrows": 10,
+   "x_lo": 40,
+   "x_hi": 710,
+   "y_lo": 1170,
+   "y_hi": 2180
+  },
+  {
+   "name": "code",
+   "ncols": 2,
+   "nrows": 10,
+   "x_lo": 1890,
+   "x_hi": 2040,
+   "y_lo": 820,
+   "y_hi": 1850
+  }
+ ]
+}

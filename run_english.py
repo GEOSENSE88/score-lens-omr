@@ -8,25 +8,11 @@ import json
 from pathlib import Path
 
 import cv2
-import fitz
 
 import english_core as ec
 import id_reader as idr
 from grade import normalize_elective
 from run_math import load_name_map
-
-
-def render_pages(pdf: Path, dpi: int, out_dir: Path) -> list[Path]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    doc = fitz.open(pdf)
-    mat = fitz.Matrix(dpi / 72, dpi / 72)
-    paths = []
-    for i, page in enumerate(doc, 1):
-        p = out_dir / f"{pdf.stem}_p{i:03d}.png"
-        page.get_pixmap(matrix=mat, alpha=False).save(p)
-        paths.append(p)
-    doc.close()
-    return paths
 
 
 def load_english_key(keys_dir: Path, exam_id: str | None) -> dict | None:
@@ -133,14 +119,13 @@ def main() -> int:
         print("영어 키 없음: 판독표만 생성")
     names_full, names_beon = load_name_map(args.names)
 
-    work = Path("work") / f"{args.pdf.stem}_english"
-    pages = render_pages(args.pdf, args.dpi, work)
     rows = []
-    for i, pg in enumerate(pages, 1):
-        img = ec.oc.load_page(str(pg))
+    for pi, raw in ec.oc.iter_pdf_pages(args.pdf, args.dpi):
+        i = pi + 1
+        img = ec.oc.load_page(raw)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         sid = idr.read_id(gray)
-        res = ec.process_page(str(pg), template)
+        res = ec.process_page(img, template)
         g = grade_known(res["answers"], key)
         name = names_full.get((sid["ban"], sid["beon"])) or names_beon.get(sid["beon"], "")
         row = dict(page=i, school=sid["school"], ban=sid["ban"], beon=sid["beon"], name=name, answers=res["answers"], **g)

@@ -159,7 +159,8 @@ def consolidate(args) -> list[dict]:
                     else:
                         sun += pt
             s["국어"] = dict(선택=elective, 공통원=gong or "", 선택원=sun or "",
-                            원점수=int(row.get("원점수") or 0), 만점=int(row.get("만점") or 100), 정오=jeongo)
+                            원점수=int(row.get("원점수") or 0), 만점=int(row.get("만점") or 100),
+                            정오=jeongo, 확인=row.get("확인필요", ""))
         else:                                     # 고1·2 판독표 포맷
             s["국어"] = parse_pandokpyo(row, "국어")
 
@@ -183,7 +184,8 @@ def consolidate(args) -> list[dict]:
                     else:
                         sun += pt
             s["수학"] = dict(선택=elective, 공통원=gong or "", 선택원=sun or "",
-                            원점수=int(row.get("원점수") or 0), 만점=int(row.get("만점") or 100), 정오=jeongo)
+                            원점수=int(row.get("원점수") or 0), 만점=int(row.get("만점") or 100),
+                            정오=jeongo, 확인=row.get("확인필요", ""))
         else:                                     # 고1·2 판독표 포맷
             s["수학"] = parse_pandokpyo(row, "수학")
 

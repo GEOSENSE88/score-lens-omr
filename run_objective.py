@@ -20,25 +20,11 @@ import json
 from pathlib import Path
 
 import cv2
-import fitz
 
 import omr_core as oc
 import history_core as objreader   # read_answers 가 template 기반·과목 무관
 import id_reader as idr
 from run_math import load_name_map
-
-
-def render_pages(pdf: Path, dpi: int, out_dir: Path) -> list[Path]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    doc = fitz.open(pdf)
-    mat = fitz.Matrix(dpi / 72, dpi / 72)
-    paths = []
-    for i, page in enumerate(doc, 1):
-        p = out_dir / f"{pdf.stem}_p{i:03d}.png"
-        page.get_pixmap(matrix=mat, alpha=False).save(p)
-        paths.append(p)
-    doc.close()
-    return paths
 
 
 def load_template(path: Path) -> dict:
@@ -192,16 +178,15 @@ def main() -> int:
         print(f"{args.subject} 키 없음: 판독표만 생성")
     names_full, names_beon = load_name_map(args.names)
 
-    # ⚠️ 렌더 폴더는 --out 아래에 둔다 — 공용 work/ 를 쓰면 웹에서 같은 과목
-    #    잡 2개가 동시에 돌 때 페이지 PNG 가 서로 덮여 학생이 뒤섞인다.
-    work = args.out / f"_pages_{args.pdf.stem}_{args.subject}"
-    pages = render_pages(args.pdf, args.dpi, work)
-    if not pages:
+    # 페이지는 PDF → 메모리(ndarray) 직행으로 렌더 — 디스크 PNG 를 만들지 않으므로
+    # 같은 과목 잡 2개가 동시에 돌아도 파일이 겹칠 일이 없다(구 work/ 충돌 사고 원천 차단).
+    if oc.pdf_page_count(args.pdf) == 0:
         print(f"[오류] PDF 에 페이지가 없습니다: {args.pdf}", file=sys.stderr)
         return 1
     rows = []
-    for i, pg in enumerate(pages, 1):
-        img = oc.load_page(str(pg))
+    for pi, raw in oc.iter_pdf_pages(args.pdf, args.dpi):
+        i = pi + 1
+        img = oc.load_page(raw)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         anchor_ok = oc.detect_top_anchor(gray) is not None
         xf = oc.make_anchor_transform(gray)

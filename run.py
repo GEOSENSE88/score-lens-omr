@@ -19,26 +19,11 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
-import fitz
-import numpy as np
 
 import omr_core as oc
 import name_reader as nr
 import id_reader as idr
 from grade import load_keys, grade, normalize_elective
-
-
-def render_pages(pdf: Path, dpi: int, out_dir: Path) -> list[Path]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    doc = fitz.open(pdf)
-    mat = fitz.Matrix(dpi / 72, dpi / 72)
-    paths = []
-    for i, page in enumerate(doc, 1):
-        p = out_dir / f"{pdf.stem}_p{i:03d}.png"
-        page.get_pixmap(matrix=mat, alpha=False).save(p)
-        paths.append(p)
-    doc.close()
-    return paths
 
 
 def write_excel(rows: list[dict], out_xlsx: Path) -> None:
@@ -128,24 +113,27 @@ def main() -> int:
         return 1
     print(f"정답키 로드: {list(keys)}")
 
-    work = Path("work") / args.pdf.stem
-    work.mkdir(parents=True, exist_ok=True)
     args.out.mkdir(parents=True, exist_ok=True)
 
-    print(f"PDF 페이지 변환 ({args.dpi} DPI)...")
-    pages = render_pages(args.pdf, args.dpi, work)
-    print(f"  {len(pages)}페이지")
+    # PNG 파일을 만들지 않고 PDF → 메모리(ndarray) 직행으로 렌더한다.
+    n_pages = oc.pdf_page_count(args.pdf)
+    print(f"{n_pages}페이지 ({args.dpi} DPI, 메모리 직행)")
 
     print("격자 보정(여러 페이지 중앙값 합의)...")
-    template = oc.calibrate_template(pages, sample=min(len(pages), 15))
+    n_sample = min(n_pages, 15)
+    step = n_pages / n_sample
+    sample_idx = [int(k * step) for k in range(n_sample)]
+    template = oc.calibrate_template(
+        (im for _, im in oc.iter_pdf_pages(args.pdf, args.dpi, pages=sample_idx)))
     print(f"  y0={template['y0']:.0f} pitch={template['pitch']:.1f} "
           f"(보정 {template['n_pages']}페이지)")
 
     rows, flagged = [], []
-    for i, pg in enumerate(pages, 1):
-        img = oc.load_page(str(pg))
+    for pi, raw in oc.iter_pdf_pages(args.pdf, args.dpi):
+        i = pi + 1
+        img = oc.load_page(raw)          # auto_orient 적용 (경로 로드와 동일 불변식)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        res = oc.process_page(str(pg), template)
+        res = oc.process_page(img, template)
         name = nr.read_name(gray)
         sid = idr.read_id(gray)
         elective = normalize_elective(res["subject"])

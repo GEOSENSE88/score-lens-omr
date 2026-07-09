@@ -59,7 +59,18 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=BEHIND_PROXY,     # HTTPS 전용 쿠키 (프록시 뒤=TLS 종단)
     PERMANENT_SESSION_LIFETIME=60 * 60 * 8,
+    # 정적 파일(app.css/app.js)은 장기 캐시 — HTML 은 no-store 지만 ?v=mtime 으로
+    # 파일이 바뀔 때만 새로 받는다 (매 방문 50KB 재전송 제거)
+    SEND_FILE_MAX_AGE_DEFAULT=7 * 24 * 3600,
 )
+
+
+def _static_version() -> int:
+    try:
+        return max(int((ROOT / "static" / f).stat().st_mtime)
+                   for f in ("app.css", "app.js"))
+    except OSError:
+        return 0
 if BEHIND_PROXY:
     # nginx 가 넘기는 X-Forwarded-* 를 신뢰 → request.remote_addr 가 실제 클라이언트 IP.
     # (없으면 모든 요청이 127.0.0.1 로 보여 localhost 무인증 게이트가 통째로 우회된다.)
@@ -303,6 +314,41 @@ _G12 = [
 SUBJECTS_BY_GRADE[1] = _G12
 SUBJECTS_BY_GRADE[2] = _G12
 
+# 고3 학평(시도교육청 전국연합, 3·4·7·10월) — 평가원과 물리적으로 다른 카드.
+# run_hp.py 가 정렬(타이밍마크 아핀+격자검증)→판독(수험번호·선택·탐구코드·
+# 수학 단답형)→채점까지 수행하고, 기존과 같은 CSV 포맷을 내므로
+# 통합성적표·결과편집 UI 는 그대로 재사용된다.
+_G3_HP = [
+    dict(key="korean", label="국어", icon="가", script="run_hp.py",
+         subject_arg="국어", names=True, template="templates/korean_g3hp.json",
+         id_layout=None, csv_kind="korean", csv_suffix="_점수표.csv"),
+    dict(key="math", label="수학", icon="∑", script="run_hp.py",
+         subject_arg="수학", names=True, template="templates/math_g3hp.json",
+         id_layout=None, csv_kind="math", csv_suffix="_수학_점수표.csv"),
+    dict(key="english", label="영어", icon="A", script="run_hp.py",
+         subject_arg="영어", names=True, template="templates/english_g3hp.json",
+         id_layout=None, csv_kind="english", csv_suffix="_영어_판독표.csv"),
+    dict(key="history", label="한국사", icon="史", script="run_hp.py",
+         subject_arg="한국사", names=True, template="templates/history_g3hp.json",
+         id_layout=None, csv_kind="history", csv_suffix="_한국사_판독표.csv"),
+    dict(key="explore", label="탐구", icon="探", script="run_hp.py",
+         subject_arg="탐구", names=True, template="templates/expl1_g3hp.json",
+         id_layout=None, csv_kind="explore", csv_suffix="_탐구_판독표.csv"),
+]
+HP_MONTHS = {3, 4, 7, 10}   # 전국연합 학력평가 시행 월
+
+
+def _exam_month(exam_id: str | None) -> int | None:
+    m = re.fullmatch(r"\d{4}(\d{2})\d{2}\d", str(exam_id or ""))
+    return int(m.group(1)) if m else None
+
+
+def catalog_for(grade: int, exam_id: str | None) -> list[dict]:
+    """학년+시험으로 판독 카탈로그 선택 — 고3 학평이면 학평 카드 판독기."""
+    if grade == 3 and _exam_month(exam_id) in HP_MONTHS:
+        return _G3_HP
+    return SUBJECTS_BY_GRADE[grade]
+
 
 def subject_available(spec: dict) -> bool:
     """판독에 필요한 좌표 템플릿이 준비됐는가. (고3 국어는 자동보정이라 템플릿 불요)"""
@@ -343,9 +389,15 @@ def _existing_files(path: Path) -> list[Path]:
     return sorted(p for p in path.rglob("*") if p.is_file())
 
 
+_PROG_RE = re.compile(r"^PROGRESS\s+(\d+)\s*/\s*(\d+)\s*$")
+
+
 def run_reader(spec: dict, pdf: Path, *, exam_id: str | None, names: Path | None,
-               out_root: Path, dpi: int) -> SubjectRun:
-    """과목 판독 스크립트를 서브프로세스로 실행하고 산출물을 수집."""
+               out_root: Path, dpi: int, on_progress=None) -> SubjectRun:
+    """과목 판독 스크립트를 서브프로세스로 실행하고 산출물을 수집.
+
+    러너가 stdout 에 흘리는 'PROGRESS n/total' 을 실시간 파싱해
+    on_progress(n, total) 로 전달한다(페이지 단위 진행률)."""
     script = ROOT / spec["script"]
     out_dir = out_root / f"{spec['key']}_{pdf.stem}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -366,12 +418,24 @@ def run_reader(spec: dict, pdf: Path, *, exam_id: str | None, names: Path | None
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
-    proc = subprocess.run(cmd, cwd=ROOT, env=env, text=True, encoding="utf-8",
-                          errors="replace", stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(cmd, cwd=ROOT, env=env, text=True, encoding="utf-8",
+                            errors="replace", stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, bufsize=1)
+    lines: list[str] = []
+    for line in proc.stdout:
+        m = _PROG_RE.match(line.strip())
+        if m:
+            if on_progress:
+                try:
+                    on_progress(int(m.group(1)), int(m.group(2)))
+                except Exception:
+                    pass
+            continue                        # 진행률 라인은 로그에서 제외
+        lines.append(line)
+    proc.wait()
 
     log_path = out_dir / "run_log.txt"
-    log_path.write_text(proc.stdout, encoding="utf-8")
+    log_path.write_text("".join(lines), encoding="utf-8")
     produced = sorted(set(_existing_files(out_dir)) - before)
     if log_path not in produced:
         produced.append(log_path)
@@ -479,7 +543,11 @@ def process_job(job_id: str, run_output_dir: Path, grade: int,
     csv_by_kind: dict[str, str] = {}
     try:
         update_job(job_id, status="running", total=len(requested), completed=0, ok=None)
-        append_event(job_id, f"고{grade} 답안지 {len(requested)}과목 채점을 시작합니다.")
+        is_hp = requested and requested[0][0].get("script") == "run_hp.py"
+        card = "전국연합 학력평가(교육청)" if is_hp else \
+               ("대수능 모의평가(평가원)" if grade == 3 else f"고{grade} 학력평가")
+        append_event(job_id, f"고{grade} 답안지 {len(requested)}과목 채점을 시작합니다 "
+                             f"— {card} 카드로 판독", kind="info")
 
         # 국어를 먼저 돌려 성명 CSV 를 나머지 과목에 자동 연결 (별도 업로드 없을 때)
         ordered = sorted(requested, key=lambda x: x[0]["key"] != "korean")
@@ -488,7 +556,10 @@ def process_job(job_id: str, run_output_dir: Path, grade: int,
         for spec, pdf in ordered:
             append_event(job_id, f"{spec['label']}: OMR 마킹 판독 중…", kind="run")
             run = run_reader(spec, pdf, exam_id=exam_id, names=effective_names,
-                             out_root=run_output_dir, dpi=dpi)
+                             out_root=run_output_dir, dpi=dpi,
+                             on_progress=lambda d, t, lb=spec["label"]:
+                                 update_job(job_id, sub=dict(label=lb, done=d, total=t)))
+            update_job(job_id, sub=None)
             runs.append(run)
             done += 1
             update_job(job_id, completed=done,
@@ -569,7 +640,8 @@ def index():
         port = int(os.environ.get("OMR_PORT", "5050"))
         share = dict(url=f"http://{lan_ip()}:{port}", code=ACCESS_CODE)
     return render_template("index.html", catalog=catalog_for_ui(),
-                           exams=er.list_exams(ROOT / "keys"), share=share)
+                           exams=er.list_exams(ROOT / "keys"), share=share,
+                           static_v=_static_version())
 
 
 @app.get("/api/exams")
@@ -629,10 +701,11 @@ def _launch_job(run_id: str, run_output_dir: Path, grade: int,
                      daemon=True).start()
 
 
-def _build_requested(grade: int, resolve):
-    """(spec, path) 목록과 미보정 과목 목록을 만든다. resolve(spec)→Path|None."""
+def _build_requested(grade: int, resolve, exam_id: str | None = None):
+    """(spec, path) 목록과 미보정 과목 목록을 만든다. resolve(spec)→Path|None.
+    exam_id 로 카드 종류(평가원/학평)를 판별해 알맞은 판독기를 배정한다."""
     requested, unavailable = [], []
-    for spec in SUBJECTS_BY_GRADE[grade]:
+    for spec in catalog_for(grade, exam_id):
         path = resolve(spec)
         if not path:
             continue
@@ -660,7 +733,8 @@ def api_score():
         exam_year = request.form.get("exam_year", "").strip() or None
         names = save_upload(run_upload_dir, "names")
         requested, unavailable = _build_requested(
-            grade, lambda spec: save_upload(run_upload_dir, f"pdf_{spec['key']}"))
+            grade, lambda spec: save_upload(run_upload_dir, f"pdf_{spec['key']}"),
+            exam_id=exam_id)
         if unavailable:
             return jsonify(ok=False, message=(
                 f"{', '.join(unavailable)}: 고{grade} 판독 좌표가 아직 보정되지 않았습니다. "
@@ -772,7 +846,8 @@ def api_score_start(run_id: str):
     try:
         names = dir_up / "names.csv" if (dir_up / "names.csv").exists() else None
         requested, unavailable = _build_requested(
-            grade, lambda spec: _merge_parts(dir_up, f"pdf_{spec['key']}"))
+            grade, lambda spec: _merge_parts(dir_up, f"pdf_{spec['key']}"),
+            exam_id=p["exam_id"])
         if unavailable:
             return jsonify(ok=False, message=(
                 f"{', '.join(unavailable)}: 고{grade} 판독 좌표가 아직 보정되지 않았습니다. "

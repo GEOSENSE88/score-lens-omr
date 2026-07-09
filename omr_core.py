@@ -106,7 +106,11 @@ def auto_orient(bgr: np.ndarray) -> np.ndarray:
     return best[1]                                     # 못 찾으면 마크 최다 방향
 
 
-def load_page(path: str) -> np.ndarray:
+def load_page(path) -> np.ndarray:
+    # ndarray(BGR) 를 직접 받으면 디스크를 거치지 않는다 — auto_orient 만 적용.
+    # (auto_orient 는 정상 방향이면 즉시 반환하는 빠른 경로라 중복 호출 부담이 작다)
+    if isinstance(path, np.ndarray):
+        return auto_orient(path)
     # cv2.imread 는 Windows 에서 한글 경로/파일명을 못 읽는다 → fromfile+imdecode 로 우회
     try:
         img = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -115,6 +119,34 @@ def load_page(path: str) -> np.ndarray:
     if img is None:
         raise FileNotFoundError(path)
     return auto_orient(img)
+
+
+def pdf_page_count(pdf_path) -> int:
+    import fitz
+    with fitz.open(str(pdf_path)) as doc:
+        return doc.page_count
+
+
+def iter_pdf_pages(pdf_path, dpi: int = 300, pages=None):
+    """PDF 페이지를 PNG 파일을 거치지 않고 BGR ndarray 로 바로 렌더.
+
+    (page_index, img) 를 순서대로 yield 한다 — 한 장씩 스트리밍이므로
+    수백 페이지 배치에서도 메모리는 페이지 1장분만 쓴다.
+    pages 를 주면 해당 인덱스(0-base)만 렌더한다(격자 보정 샘플용).
+    """
+    import fitz
+    doc = fitz.open(str(pdf_path))
+    try:
+        mat = fitz.Matrix(dpi / 72, dpi / 72)
+        idxs = range(doc.page_count) if pages is None else pages
+        for i in idxs:
+            pix = doc[i].get_pixmap(matrix=mat, alpha=False)
+            arr = np.frombuffer(pix.samples, dtype=np.uint8)
+            arr = arr.reshape(pix.height, pix.stride)[:, : pix.width * pix.n]
+            arr = arr.reshape(pix.height, pix.width, pix.n)
+            yield i, cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+    finally:
+        doc.close()
 
 
 def red_mask(img: np.ndarray) -> np.ndarray:
@@ -176,15 +208,23 @@ def calibrate_template(image_paths, sample: int | None = None) -> dict:
     """여러 페이지의 격자를 중앙값으로 합의 → 단일 안정 템플릿.
 
     페이지별 단일추정의 이상치(밀림/간격오류)를 median 이 자동 배제한다.
+
+    image_paths 항목은 경로 / ndarray(BGR) / 무인자 callable(지연 렌더) 모두 허용.
+    sample=None 이면 제너레이터를 그대로 스트리밍 소비한다(메모리 1장분).
     """
-    paths = list(image_paths)
-    if sample and len(paths) > sample:
-        step = len(paths) / sample
-        paths = [paths[int(i * step)] for i in range(sample)]
+    items = image_paths
+    if sample:
+        items = list(items)
+        if len(items) > sample:
+            step = len(items) / sample
+            items = [items[int(i * step)] for i in range(sample)]
     grids = []
-    for p in paths:
+    for p in items:
         try:
-            grids.append(build_answer_grid(detect_blobs(red_mask(load_page(str(p))))))
+            src = p() if callable(p) else p
+            if not isinstance(src, np.ndarray):
+                src = str(src)
+            grids.append(build_answer_grid(detect_blobs(red_mask(load_page(src)))))
         except Exception:
             continue
     if not grids:
@@ -247,14 +287,14 @@ def read_subject(gray: np.ndarray, fill_min: float = 50.0) -> str | None:
     return best if scores[best] >= fill_min else None
 
 
-def process_page(path: str, template: dict | None = None) -> dict:
-    """한 페이지 판독. template 을 주면(권장) 합의 격자로 읽고,
-    없으면 그 페이지에서 단독 추정(이상치 위험)."""
+def process_page(path, template: dict | None = None) -> dict:
+    """한 페이지 판독. path 는 파일 경로 또는 ndarray(BGR).
+    template 을 주면(권장) 합의 격자로 읽고, 없으면 그 페이지에서 단독 추정(이상치 위험)."""
     img = load_page(path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     grid = template or build_answer_grid(detect_blobs(red_mask(img)))
     return dict(
-        path=path,
+        path=path if isinstance(path, str) else None,
         subject=read_subject(gray),
         answers=read_answers(gray, grid),
         grid=grid,

@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 import cv2
-import fitz
 
 import ebsi_xip_keys
 import explore_core as xc
@@ -56,19 +55,6 @@ def read_explore_id(gray) -> dict:
         return "".join(str(x) if x >= 0 else "?" for x in seq)
 
     return {"school": join(digs[:5]), "ban": join(digs[5:7]), "beon": join(digs[7:9])}
-
-
-def render_pages(pdf: Path, dpi: int, out_dir: Path) -> list[Path]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    doc = fitz.open(pdf)
-    mat = fitz.Matrix(dpi / 72, dpi / 72)
-    paths = []
-    for i, page in enumerate(doc, 1):
-        p = out_dir / f"{pdf.stem}_p{i:03d}.png"
-        page.get_pixmap(matrix=mat, alpha=False).save(p)
-        paths.append(p)
-    doc.close()
-    return paths
 
 
 def load_key(keys_dir: Path, exam_id: str | None, subject: str) -> dict | None:
@@ -199,15 +185,14 @@ def main() -> int:
 
     template = xc.load_template(args.template)
     names_full, names_beon = load_name_map(args.names)
-    work = Path("work") / f"{args.pdf.stem}_explore"
-    pages = render_pages(args.pdf, args.dpi, work)
     rows = []
 
-    for i, pg in enumerate(pages, 1):
-        img = xc.oc.load_page(str(pg))
+    for pi, raw in xc.oc.iter_pdf_pages(args.pdf, args.dpi):
+        i = pi + 1
+        img = xc.oc.load_page(raw)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         sid = read_explore_id(gray)
-        res = xc.process_page(str(pg), template)
+        res = xc.process_page(img, template)
         row = {
             "page": i,
             "school": sid["school"],

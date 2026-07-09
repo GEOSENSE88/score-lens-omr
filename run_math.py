@@ -12,20 +12,11 @@ score_lens / omr_scorer
 from __future__ import annotations
 import argparse, csv, sys
 from pathlib import Path
-import cv2, fitz
+import cv2
 
 import math_core as mc
 import id_reader as idr
 from grade import load_keys, normalize_elective
-
-
-def render_pages(pdf, dpi, out_dir):
-    out_dir.mkdir(parents=True, exist_ok=True)
-    doc = fitz.open(pdf); mat = fitz.Matrix(dpi / 72, dpi / 72); paths = []
-    for i, page in enumerate(doc, 1):
-        p = out_dir / f"{pdf.stem}_p{i:03d}.png"
-        page.get_pixmap(matrix=mat, alpha=False).save(p); paths.append(p)
-    doc.close(); return paths
 
 
 def load_name_map(csv_path):
@@ -164,14 +155,13 @@ def main():
     if args.template:
         print(f"템플릿: {args.template}")
 
-    work = Path("work") / (args.pdf.stem + "_math")
-    pages = render_pages(args.pdf, args.dpi, work)
-    print(f"{len(pages)}페이지 처리...")
+    print(f"{mc.oc.pdf_page_count(args.pdf)}페이지 처리...")
 
     rows = []
-    for i, pg in enumerate(pages, 1):
-        img = mc.oc.load_page(str(pg)); gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        res = mc.process_page(str(pg), template); sid = idr.read_id(gray)
+    for pi, raw in mc.oc.iter_pdf_pages(args.pdf, args.dpi):
+        i = pi + 1
+        img = mc.oc.load_page(raw); gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        res = mc.process_page(img, template); sid = idr.read_id(gray)
         el = normalize_elective(res["subject"]); key = keys.get(el)
         nm = names_full.get((sid["ban"], sid["beon"])) or names_beon.get(sid["beon"], "")
         if key:
