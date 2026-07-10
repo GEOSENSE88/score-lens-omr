@@ -426,6 +426,9 @@ function renderTable(){
     if (expanded.has(idx)) expanded.delete(idx); else expanded.add(idx);
     renderTable();
   }));
+  // 플래그 행: 스캔 원본 카드 보기
+  $$("#rvBody .rv-card").forEach(btn => btn.addEventListener("click", () =>
+    showCard(curSubject, +btn.dataset.page)));
   bindGrid();
 }
 
@@ -447,12 +450,15 @@ function rowHtml(s, idx){
   const d = subjData(s, curSubject);
   const stt = readStatus(d);
   const open = expanded.has(idx);
+  const cardBtn = (stt.flag && d.페이지)
+    ? `<button class="rv-card" data-page="${d.페이지}" title="스캔 원본을 보며 수험번호·성명을 고치세요">🔍 카드 보기</button> `
+    : "";
   let html = `<tr class="stu ${stt.flag?'flag':''}">
     <td><input class="rv-cell-edit sm" data-idx="${idx}" data-field="반" value="${esc(s.반)}"></td>
     <td><input class="rv-cell-edit sm" data-idx="${idx}" data-field="번호" value="${esc(s.번호)}"></td>
     <td><input class="rv-cell-edit nm" data-idx="${idx}" data-field="이름" value="${esc(s.이름)}"></td>
     <td>${stt.html}</td>
-    <td style="text-align:right"><button class="rv-toggle ${open?'open':''}" data-idx="${idx}">답안 ${open?'닫기':'보기·수정'}</button></td>
+    <td style="text-align:right;white-space:nowrap">${cardBtn}<button class="rv-toggle ${open?'open':''}" data-idx="${idx}">답안 ${open?'닫기':'보기·수정'}</button></td>
   </tr>`;
   if (open) html += `<tr class="rv-detail"><td colspan="5"><div class="rv-detail-inner">
       <div class="rv-legend">
@@ -505,6 +511,47 @@ async function saveAnswer(idx, q, value){
 }
 
 function esc(v){ return String(v ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+/* ── 스캔 원본 카드 모달 (플래그 행 검토용) ── */
+const SUBJ_KEY = {국어:"korean", 수학:"math", 영어:"english", 한국사:"history",
+                  통합사회:"social", 통합과학:"science"};
+
+function ensureCardModal(){
+  let ov = $("#cardModal");
+  if (ov) return ov;
+  ov = document.createElement("div");
+  ov.id = "cardModal";
+  ov.innerHTML = `
+    <div class="cm-box">
+      <div class="cm-head">
+        <span class="cm-title"></span>
+        <span class="cm-hint">이미지를 보며 표의 반·번호·성명 칸을 직접 수정하세요 (클릭=확대)</span>
+        <button class="cm-close" title="닫기">✕</button>
+      </div>
+      <div class="cm-body"><img alt="답안지 스캔"></div>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener("click", e => { if (e.target === ov) ov.style.display = "none"; });
+  ov.querySelector(".cm-close").addEventListener("click", () => ov.style.display = "none");
+  const img = ov.querySelector("img");
+  img.addEventListener("click", () => img.classList.toggle("zoom"));
+  img.addEventListener("error", () => {
+    ov.querySelector(".cm-title").textContent = "이미지를 찾을 수 없습니다 (결과가 만료됐을 수 있음)";
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") ov.style.display = "none"; });
+  return ov;
+}
+
+function showCard(subjLabel, page){
+  if (!RUN_ID || !page) return;
+  const key = SUBJ_KEY[subjLabel] || "explore";   // 탐구 과목명 탭 → explore 카드
+  const ov = ensureCardModal();
+  ov.querySelector(".cm-title").textContent = `${subjLabel} 답안지 ${page}쪽 — 스캔 원본`;
+  const img = ov.querySelector("img");
+  img.classList.remove("zoom");
+  img.src = `/review_img/${RUN_ID}/${key}/${page}`;
+  ov.style.display = "flex";
+}
 
 $("#rvSearch").addEventListener("input", () => renderTable());
 

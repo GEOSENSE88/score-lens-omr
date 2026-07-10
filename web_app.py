@@ -149,7 +149,8 @@ def _subj_cells(d: dict) -> dict:
         cells.append(dict(q=int(q), 답=c.get("답"), 정답=c.get("정답"), ok=bool(c.get("ok"))))
     return dict(원점수=d.get("원점수", ""), 만점=d.get("만점", ""),
                 선택=d.get("선택", ""), 확인=d.get("확인", ""),
-                예상등급=d.get("예상등급", ""), cells=cells)
+                예상등급=d.get("예상등급", ""), 페이지=d.get("페이지", ""),
+                cells=cells)
 
 
 # ── 인증: 세션 비밀키 + 접속 코드 ─────────────────────────────────
@@ -961,6 +962,21 @@ def api_result_edit(run_id: str):
         return jsonify(ok=False, message="지원하지 않는 수정입니다."), 400
     r["stale"] = True                             # 다운로드 시 재생성
     return jsonify(ok=True, student=_serialize_results(run_id)["students"][idx])
+
+
+@app.get("/review_img/<run_id>/<subject_key>/<int:page>")
+def review_img(run_id: str, subject_key: str, page: int):
+    """확인필요 행의 실제 스캔 카드 이미지 — 검토 UI 의 '카드 보기'용.
+    (run_hp 가 플래그 페이지만 review_imgs/ 에 저장한다)"""
+    if not re.fullmatch(r"[0-9a-f]{8,32}", run_id) \
+            or not re.fullmatch(r"[a-z]+", subject_key) or not (1 <= page <= 2000):
+        abort(404)
+    run_dir = (WEB_OUTPUT_ROOT / run_id).resolve()
+    if not run_dir.exists():
+        abort(404)
+    for p in sorted(run_dir.glob(f"{subject_key}_*/review_imgs/p{page}.jpg")):
+        return send_file(p, mimetype="image/jpeg", max_age=3600)
+    abort(404)
 
 
 @app.get("/download/<run_id>/<path:relpath>")

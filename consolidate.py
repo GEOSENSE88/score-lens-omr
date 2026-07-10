@@ -137,7 +137,7 @@ def consolidate(args) -> list[dict]:
         score = _clean_num(score) if str(score).replace(".", "").isdigit() else _clean_num(total)
         return dict(선택=subject, 공통원=score, 선택원="", 원점수=score,
                     만점=_clean_num(row.get("만점") or 100), 정오=jeongo,
-                    확인=row.get("확인필요", ""))
+                    확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
 
     # ── 국어: 점수표(고3, 원점수+선택과목) 또는 판독표(고1·2) 자동 감지
     for row in _read_csv(args.korean):
@@ -160,7 +160,7 @@ def consolidate(args) -> list[dict]:
                         sun += pt
             s["국어"] = dict(선택=elective, 공통원=gong or "", 선택원=sun or "",
                             원점수=int(row.get("원점수") or 0), 만점=int(row.get("만점") or 100),
-                            정오=jeongo, 확인=row.get("확인필요", ""))
+                            정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
         else:                                     # 고1·2 판독표 포맷
             s["국어"] = parse_pandokpyo(row, "국어")
 
@@ -185,7 +185,7 @@ def consolidate(args) -> list[dict]:
                         sun += pt
             s["수학"] = dict(선택=elective, 공통원=gong or "", 선택원=sun or "",
                             원점수=int(row.get("원점수") or 0), 만점=int(row.get("만점") or 100),
-                            정오=jeongo, 확인=row.get("확인필요", ""))
+                            정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
         else:                                     # 고1·2 판독표 포맷
             s["수학"] = parse_pandokpyo(row, "수학")
 
@@ -200,7 +200,7 @@ def consolidate(args) -> list[dict]:
             stu = row.get(str(q))
             stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
             jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": stu == ans[q]}
-        s["영어"] = dict(원점수=_num_score(score_col), 만점=_num_score(row.get("부분만점") or row.get("만점"), 100), 정오=jeongo, 확인=row.get("확인필요", ""))
+        s["영어"] = dict(원점수=_num_score(score_col), 만점=_num_score(row.get("부분만점") or row.get("만점"), 100), 정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
 
     # ── 한국사 (판독표)
     for row in _read_csv(args.history):
@@ -212,7 +212,7 @@ def consolidate(args) -> list[dict]:
             stu = row.get(str(q))
             stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
             jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": stu == ans[q]}
-        s["한국사"] = dict(원점수=_num_score(row.get("점수")), 만점=_num_score(row.get("만점"), 50), 정오=jeongo, 확인=row.get("확인필요", ""))
+        s["한국사"] = dict(원점수=_num_score(row.get("점수")), 만점=_num_score(row.get("만점"), 50), 정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
 
     # ── 탐구 (판독표): 제1·제2 선택
     for row in _read_csv(args.explore):
@@ -230,7 +230,8 @@ def consolidate(args) -> list[dict]:
                 stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
                 jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": stu == ans[q]}
             tam.append(dict(과목=subj, 원점수=_num_score(row.get(f"{pre}점수")),
-                            만점=_num_score(row.get(f"{pre}만점"), 50), 정오=jeongo))
+                            만점=_num_score(row.get(f"{pre}만점"), 50), 정오=jeongo,
+                            확인=row.get("확인필요", ""), 페이지=row.get("페이지", "")))
         if tam:
             s["탐구"] = tam
 
