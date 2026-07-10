@@ -155,6 +155,29 @@ def red_mask(img: np.ndarray) -> np.ndarray:
     return (((r - b) > 30) & (r > 120)).astype("uint8") * 255
 
 
+def save_review_images(pdf_path, pages, out_dir, dpi: int = 300,
+                       width: int = 1400) -> int:
+    """확인필요 페이지의 스캔 이미지를 out_dir/review_imgs/p{n}.jpg 로 저장.
+
+    웹 검토 UI '카드 보기'용 — auto_orient 만 적용한 원본(정렬 파이프라인과
+    무관하게 항상 보여줄 수 있음). pages 는 1-기반 페이지 번호 목록."""
+    from pathlib import Path as _P
+    pages = sorted({int(p) for p in pages if p})
+    if not pages:
+        return 0
+    img_dir = _P(out_dir) / "review_imgs"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    for pi, raw in iter_pdf_pages(pdf_path, dpi, pages=[p - 1 for p in pages]):
+        img = auto_orient(raw)
+        h, w = img.shape[:2]
+        small = cv2.resize(img, (width, round(h * width / w)),
+                           interpolation=cv2.INTER_AREA)
+        ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 78])
+        if ok:
+            buf.tofile(str(img_dir / f"p{pi + 1}.jpg"))
+    return len(pages)
+
+
 def _cluster(vals, gap):
     vals = np.sort(vals)
     groups = [[vals[0]]]

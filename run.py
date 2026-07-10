@@ -159,6 +159,7 @@ def main() -> int:
             warns.append(f"미마킹 {len(row['blank'])}개")
         if row["dup"]:
             warns.append(f"중복마킹 {len(row['dup'])}개")
+        row["warn"] = ", ".join(warns)
         if warns:
             flagged.append((i, warns))
         flag = ("  ⚠️ " + ", ".join(warns)) if warns else ""
@@ -183,16 +184,20 @@ def main() -> int:
             w = csv.writer(f)
             w.writerow(["페이지", "학교(학원)번호", "반", "번호", "성명", "선택과목",
                         "원점수", "만점", "맞은개수", "틀린문항", "미마킹", "중복마킹"]
-                       + [str(q) for q in range(1, 46)])
+                       + [str(q) for q in range(1, 46)] + ["확인필요"])
             for r in rows:
                 pq = r.get("per_q", {})
                 w.writerow([r["page"], r.get("school", ""), r.get("ban", ""), r.get("beon", ""),
                             r.get("name", ""), r["elective"] or "?", r["score"], r["max_score"],
                             r["correct_count"], " ".join(map(str, r["wrong"])),
                             " ".join(map(str, r["blank"])), " ".join(map(str, r["dup"]))]
-                           + [pq.get(q, {}).get("student", "") for q in range(1, 46)])
+                           + [pq.get(q, {}).get("student", "") for q in range(1, 46)]
+                           + [r.get("warn", "")])
 
     csv_path = _save(args.out / f"{args.pdf.stem}_점수표.csv", _write_csv)
+    if flagged:
+        oc.save_review_images(args.pdf, [i for i, _ in flagged], args.out, args.dpi)
+        print(f"검토용 카드 이미지 {len(flagged)}장 저장 (review_imgs/)")
     xlsx_path = _save(args.out / f"{args.pdf.stem}_점수표.xlsx",
                       lambda p: write_excel(rows, p))
 

@@ -60,11 +60,11 @@ def write_outputs(rows: list[dict], out: Path, stem: str, key: dict | None) -> t
     csv_path = out / f"{stem}_영어_판독표.csv"
     with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["페이지", "학교번호", "반", "번호", "성명", "부분점수", "부분만점", "부분틀린문항"] + [str(q) for q in range(1, 46)])
+        w.writerow(["페이지", "학교번호", "반", "번호", "성명", "부분점수", "부분만점", "부분틀린문항"] + [str(q) for q in range(1, 46)] + ["확인필요"])
         for r in rows:
             w.writerow(
                 [r["page"], r["school"], r["ban"], r["beon"], r["name"], r["score"], r["max_score"], " ".join(map(str, r["wrong"]))]
-                + [r["answers"].get(q, "") for q in range(1, 46)]
+                + [r["answers"].get(q, "") for q in range(1, 46)] + [r.get("warn", "")]
             )
 
     wb = Workbook()
@@ -129,10 +129,22 @@ def main() -> int:
         g = grade_known(res["answers"], key)
         name = names_full.get((sid["ban"], sid["beon"])) or names_beon.get(sid["beon"], "")
         row = dict(page=i, school=sid["school"], ban=sid["ban"], beon=sid["beon"], name=name, answers=res["answers"], **g)
+        warns = []
+        if "?" in f"{sid['school']}{sid['ban']}{sid['beon']}":
+            warns.append("수험번호")
+        if len(g["blank"]) >= 5:
+            warns.append(f"미마킹{len(g['blank'])}")
+        if g["dup"]:
+            warns.append(f"중복{len(g['dup'])}")
+        row["warn"] = " ".join(warns)
         rows.append(row)
         print(f"p{i:02d} {name:<5} {sid['ban']}-{sid['beon']} known {row['score']}/{row['max_score']}")
 
     xlsx, csvp = write_outputs(rows, args.out, args.pdf.stem, key)
+    flagged = sorted({r["page"] for r in rows if r.get("warn")})
+    if flagged:
+        ec.oc.save_review_images(args.pdf, flagged, args.out, args.dpi)
+        print(f"검토용 카드 이미지 {len(flagged)}장 저장 (review_imgs/)")
     print(f"완료:\n  {xlsx}\n  {csvp}")
     return 0
 

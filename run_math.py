@@ -116,13 +116,13 @@ def write_outputs(rows, out, stem):
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
             w.writerow(["페이지", "학교번호", "반", "번호", "성명", "선택과목", "원점수", "만점", "틀린문항"]
-                       + [str(q) for q in range(1, 31)])
+                       + [str(q) for q in range(1, 31)] + ["확인필요"])
             for row in rows:
                 ans = row.get("answers", {})
                 w.writerow([row["page"], row["school"], row["ban"], row["beon"], row["name"],
                             row["elective"] or "?", row["score"], row["max"],
                             " ".join(map(str, row["wrong"]))]
-                           + [ans.get(q, "") for q in range(1, 31)])
+                           + [ans.get(q, "") for q in range(1, 31)] + [row.get("warn", "")])
     csvp = _save(f"{stem}_수학_점수표", ".csv", _csv)
     return xlsx, csvp
 
@@ -172,6 +172,18 @@ def main():
         else:
             row = dict(page=i, name=nm, school=sid["school"], ban=sid["ban"], beon=sid["beon"],
                        elective=res["subject"], score=None, max=100, wrong=[], answers=res["answers"])
+        warns = []
+        if "?" in f"{sid['school']}{sid['ban']}{sid['beon']}":
+            warns.append("수험번호")
+        if not key:
+            warns.append("선택과목 미검출/키없음")
+        nblank = sum(1 for q in range(1, 31) if row["answers"].get(q, 0) == 0)
+        ndup = sum(1 for v in row["answers"].values() if v == -1)
+        if nblank >= 8:
+            warns.append(f"미마킹{nblank}")
+        if ndup:
+            warns.append(f"중복{ndup}")
+        row["warn"] = " ".join(warns)
         rows.append(row)
         print(f"  p{i:>2}: {nm:<5} {sid['ban']}-{sid['beon']} {res['subject'] or '?':<7} "
               f"{row['score'] if row['score'] is not None else '-'}/{row['max']}")
@@ -180,6 +192,10 @@ def main():
     if sc:
         print(f"\n응시 {len(sc)}명  평균 {sum(sc)/len(sc):.1f}  최고 {max(sc)}  최저 {min(sc)}")
     xlsx, csvp = write_outputs(rows, args.out, args.pdf.stem)
+    flagged = sorted({r["page"] for r in rows if r.get("warn")})
+    if flagged:
+        mc.oc.save_review_images(args.pdf, flagged, args.out, args.dpi)
+        print(f"검토용 카드 이미지 {len(flagged)}장 저장 (review_imgs/)")
     print(f"완료:\n  {xlsx}\n  {csvp}")
     return 0
 

@@ -118,7 +118,7 @@ def write_outputs(rows: list[dict], out: Path, stem: str) -> tuple[Path, Path]:
     for label in ["제1선택", "제2선택"]:
         sel_headers += [f"{label}코드", f"{label}과목", f"{label}점수", f"{label}만점", f"{label}틀린문항"]
         sel_headers += [f"{label}_{q}" for q in range(1, 21)]
-    headers = base_headers + sel_headers
+    headers = base_headers + sel_headers + ["확인필요"]
 
     csv_path = out / f"{stem}_탐구_판독표.csv"
     with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
@@ -130,6 +130,7 @@ def write_outputs(rows: list[dict], out: Path, stem: str) -> tuple[Path, Path]:
                 s = r[sel]
                 values += [s["code"], s["subject"], s["score"], s["max_score"], " ".join(map(str, s["wrong"]))]
                 values += [s["answers"].get(q, "") for q in range(1, 21)]
+            values.append(r.get("warn", ""))
             w.writerow(values)
 
     wb = Workbook()
@@ -212,6 +213,18 @@ def main() -> int:
             total_max += g["max_score"] or 0
         row["total_score"] = total_score
         row["total_max"] = total_max
+        warns = []
+        if "?" in f"{sid['school']}{sid['ban']}{sid['beon']}":
+            warns.append("수험번호")
+        for lb, sel in (("탐1", "sel1"), ("탐2", "sel2")):
+            s = row[sel]
+            answered = sum(1 for v in s["answers"].values() if v not in (0, "", None))
+            if answered and not s["code"]:
+                warns.append(f"{lb}코드미검출")
+            ndup = sum(1 for v in s["answers"].values() if v == -1)
+            if ndup:
+                warns.append(f"{lb}중복{ndup}")
+        row["warn"] = " ".join(warns)
         rows.append(row)
         print(
             f"p{i:02d} {row['name']:<5} {sid['ban']}-{sid['beon']} "
@@ -220,6 +233,10 @@ def main() -> int:
             f"{row['total_score']}/{row['total_max']}"
         )
 
+    flagged = sorted({r["page"] for r in rows if r.get("warn")})
+    if flagged:
+        xc.oc.save_review_images(args.pdf, flagged, args.out, args.dpi)
+        print(f"검토용 카드 이미지 {len(flagged)}장 저장 (review_imgs/)")
     xlsx, csvp = write_outputs(rows, args.out, args.pdf.stem)
     print(f"완료:\n  {xlsx}\n  {csvp}")
     return 0
