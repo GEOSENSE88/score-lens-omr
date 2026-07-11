@@ -390,9 +390,29 @@ def read_objective(img: np.ndarray, tmpl: dict,
     fill_min = adaptive_fill_min([max(dk) for _, dk in rows])
     out = {}
     for q, dk in rows:
-        marked = [j for j, v in enumerate(dk) if v >= fill_min]
-        out[q] = -1 if len(marked) > 1 else (marked[0] + 1 if marked else 0)
+        out[q] = decide_cell(dk, fill_min)
     return out
+
+
+def decide_cell(dk: list[float], fill_min: float) -> int:
+    """한 문항(선지 darkness 목록) → 답(1~n)/미마킹(0)/중복(-1).
+
+    절대 임계에 두 가지 상대 규칙 보강:
+    - 지운 자국: 임계 이상이 2개여도 최고가 2위의 2배 이상이면 최고 채택
+      (지우개 잔흔 40~60 vs 실마킹 100+ — 실측 크롭 감사로 검증)
+    - 연한 점 마킹: 전부 임계 미달이어도 최고가 뚜렷한 단독 우세
+      (≥18 & 2위의 4배)면 채택 — 점만 콕 찍는 학생 구제
+    애매하면 종전대로 -1/0 → 검토 목록."""
+    order = sorted(range(len(dk)), key=lambda j: -dk[j])
+    top, second = dk[order[0]], dk[order[1]]
+    marked = [j for j in range(len(dk)) if dk[j] >= fill_min]
+    if len(marked) == 1:
+        return marked[0] + 1
+    if len(marked) > 1:
+        return order[0] + 1 if top >= 2.0 * second else -1
+    if top >= 18.0 and top >= 4.0 * max(second, 1.0):
+        return order[0] + 1
+    return 0
 
 
 def main() -> int:

@@ -184,9 +184,20 @@ def t_select():
     check("빈 박스 → None", hp_id.read_select(hp_g3.pencil_gray(blank_card()), sel) is None)
 
 
+def t_decide_cell():
+    print("[마킹 판정(지운자국·연한마킹)]")
+    fm = 55.0
+    check("정상 단일", hp_g3.decide_cell([2, 3, 120, 4, 2], fm) == 3)
+    check("지운 자국(120 vs 58) → 진한 쪽", hp_g3.decide_cell([2, 58, 120, 4, 2], fm) == 3)
+    check("진짜 이중(110 vs 95) → -1", hp_g3.decide_cell([2, 95, 110, 4, 2], fm) == -1)
+    check("연한 점(30, 2위 4) → 채택", hp_g3.decide_cell([2, 4, 30, 3, 2], fm) == 3)
+    check("애매(24 vs 12) → 0", hp_g3.decide_cell([2, 12, 24, 3, 2], fm) == 0)
+    check("전부 공란 → 0", hp_g3.decide_cell([1, 2, 1, 2, 1], fm) == 0)
+
+
 def main() -> int:
     for t in (t_name, t_id, t_short_answer, t_normalize_scan,
-              t_profile_shift, t_unique_matching, t_select):
+              t_profile_shift, t_unique_matching, t_select, t_decide_cell):
         t()
     print(f"\ntests_hp: PASS {PASS} / FAIL {FAIL}")
     return 0 if FAIL == 0 else 1

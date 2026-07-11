@@ -335,20 +335,22 @@ SUBJECTS_BY_GRADE[2] = _G12
 # run_hp.py 가 정렬(타이밍마크 아핀+격자검증)→판독(수험번호·선택·탐구코드·
 # 수학 단답형)→채점까지 수행하고, 기존과 같은 CSV 포맷을 내므로
 # 통합성적표·결과편집 UI 는 그대로 재사용된다.
+# dpi=240 고속 렌더: 998쪽×5과목 전량 대조에서 300dpi 와 완전 일치 검증됨
+# (2026-07-10, work/hp_july/dpi240_check.py). 평가원·고1·2는 미검증이라 300 유지.
 _G3_HP = [
-    dict(key="korean", label="국어", icon="가", script="run_hp.py",
+    dict(key="korean", label="국어", icon="가", script="run_hp.py", dpi=240,
          subject_arg="국어", names=True, template="templates/korean_g3hp.json",
          id_layout=None, csv_kind="korean", csv_suffix="_점수표.csv"),
-    dict(key="math", label="수학", icon="∑", script="run_hp.py",
+    dict(key="math", label="수학", icon="∑", script="run_hp.py", dpi=240,
          subject_arg="수학", names=True, template="templates/math_g3hp.json",
          id_layout=None, csv_kind="math", csv_suffix="_수학_점수표.csv"),
-    dict(key="english", label="영어", icon="A", script="run_hp.py",
+    dict(key="english", label="영어", icon="A", script="run_hp.py", dpi=240,
          subject_arg="영어", names=True, template="templates/english_g3hp.json",
          id_layout=None, csv_kind="english", csv_suffix="_영어_판독표.csv"),
-    dict(key="history", label="한국사", icon="史", script="run_hp.py",
+    dict(key="history", label="한국사", icon="史", script="run_hp.py", dpi=240,
          subject_arg="한국사", names=True, template="templates/history_g3hp.json",
          id_layout=None, csv_kind="history", csv_suffix="_한국사_판독표.csv"),
-    dict(key="explore", label="탐구", icon="探", script="run_hp.py",
+    dict(key="explore", label="탐구", icon="探", script="run_hp.py", dpi=240,
          subject_arg="탐구", names=True, template="templates/expl1_g3hp.json",
          id_layout=None, csv_kind="explore", csv_suffix="_탐구_판독표.csv"),
 ]
@@ -422,7 +424,8 @@ def run_reader(spec: dict, pdf: Path, *, exam_id: str | None, names: Path | None
     before = set(_existing_files(out_dir))
 
     cmd = [sys.executable, str(script), str(pdf),
-           "--keys-dir", str(ROOT / "keys"), "--dpi", str(dpi), "--out", str(out_dir)]
+           "--keys-dir", str(ROOT / "keys"),
+           "--dpi", str(spec.get("dpi") or dpi), "--out", str(out_dir)]
     if spec.get("subject_arg"):
         cmd += ["--subject", spec["subject_arg"]]
     if exam_id:

@@ -20,8 +20,8 @@ import cv2
 import numpy as np
 
 REF_W, REF_H = 3300, 2550
-BAND = 340          # 마크 탐색 상단 띠 (skew ±3° 에서도 마크행이 안에 들어옴)
-MAX_ANGLE = 3.0     # 허용 skew (도)
+BAND = 430          # 마크 탐색 상단 띠 (skew ±5° 에서도 마크행이 안에 들어옴)
+MAX_ANGLE = 5.0     # 허용 skew (도) — deskew 가 보정하므로 게이트는 관대하게
 MAX_SCALE_DEV = 0.12   # A4 세로 스캔(≈1.06) 등 실측 배율 편차 허용
 
 
@@ -47,7 +47,8 @@ def _fit_line(marks: np.ndarray) -> tuple[np.ndarray, float, float]:
     """마크들에서 일직선 행만 남긴다 → (inliers, slope, resid_mad)."""
     pts = marks[np.argsort(marks[:, 0])]
     # 반복 강건 적합: y 중앙값 근방 → polyfit → 잔차 큰 점 제거
-    keep = pts[np.abs(pts[:, 1] - np.median(pts[:, 1])) < 70]
+    # (창 150px = skew 5° 에서 전폭 y 편차 ±145px 수용)
+    keep = pts[np.abs(pts[:, 1] - np.median(pts[:, 1])) < 150]
     for _ in range(3):
         if len(keep) < 5:
             return keep, 0.0, 1e9

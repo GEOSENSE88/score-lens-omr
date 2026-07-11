@@ -117,13 +117,16 @@ def calibrate_extras(spec: dict, pages) -> dict:
 
 def read_digit_grid(gray: np.ndarray, grid: dict,
                     fill_min: float = hp_g3.FILL_MIN) -> list[int | None]:
-    """열별 마킹 숫자(행 index = 숫자 0~9). 미마킹 None, 중복 -1."""
+    """열별 마킹 숫자(행 index = 숫자 0~9). 미마킹 None, 중복 -1.
+
+    답란과 동일한 상대 규칙(hp_g3.decide_cell) 적용 — 지운 자국·연한 점
+    마킹을 구제한다(수험번호 오채택은 학교코드 읽기-검증·반=파일 대조가 방어)."""
     out = []
     for x in grid["xs"]:
         dk = [max(oc._darkness(gray, x, y + d, 14) for d in (-12, 0, 12))
               for y in grid["ys"]]
-        marked = [i for i, v in enumerate(dk) if v >= fill_min]
-        out.append(None if not marked else (marked[0] if len(marked) == 1 else -1))
+        v = hp_g3.decide_cell(dk, fill_min)
+        out.append(None if v == 0 else (v - 1 if v > 0 else -1))
     return out
 
 
