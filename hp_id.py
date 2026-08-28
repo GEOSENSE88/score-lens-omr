@@ -72,7 +72,8 @@ def _union_vote(vals_per_page: list[list[float]], want: int, npages: int,
         y0 = min(tied, key=sup)
     else:
         y0 = max(tied, key=fit)
-    need = min(len(cen), max(2, want - 2))   # 관측 군집 대부분이 격자에 얹혀야
+    # 관측 군집 대부분이 격자에 얹혀야 — 손글씨 획 등 격자 밖 잡음 소수 허용
+    need = max(3, int(0.75 * min(len(cen), want)))
     if fit(y0)[0] < need:
         raise RuntimeError(f"{what}: 격자 적합 실패 (매칭 {fit(y0)[0]}/{want}) — "
                            f"{[round(c) for c in cen]}")
@@ -103,8 +104,9 @@ def calibrate_extras(spec: dict, pages) -> dict:
             name=name, ncols=g["ncols"], nrows=g["nrows"],
             xs=_union_vote(st["cols"], g["ncols"], npages, f"그리드 {name} 열",
                            g["x_lo"], g["x_hi"],
-                           # id: 학년열(6번째) 희박 / sa: 백의자리(첫째) 희박
-                           sparse_idx=5 if name == "id"
+                           # id(10열 학평): 학년열(6번째) 희박 / sa: 백의자리 희박
+                           # (충북 5열 id 는 전 열이 균등 마킹이라 규칙 불필요)
+                           sparse_idx=5 if (name == "id" and g["ncols"] >= 10)
                            else (0 if name.startswith("sa") else None)),
             ys=_union_vote(st["rows"], g["nrows"], npages, f"그리드 {name} 행",
                            g["y_lo"], g["y_hi"])))
@@ -156,12 +158,21 @@ def read_select(gray: np.ndarray, sel: dict, fill_min: float = 45.0) -> str | No
 
 
 def read_id(gray: np.ndarray, grid: dict) -> dict:
-    """수험번호 그리드(학교5+학년1+반2+번호2 = 10열) → {school, grade, ban, num, raw}."""
+    """수험번호 그리드 → {school, grade, ban, num, raw}.
+
+    열 수로 카드 양식을 판별한다:
+    - 10열 = 학평(인천 등): 학교5 + 학년1 + 반2 + 번호2
+    -  5열 = 충북 모의평가: 학년1 + 반2 + 번호2 (학교번호 없음)"""
     d = read_digit_grid(gray, grid)
     def join(part):
         return None if any(v is None or v == -1 for v in part) else int("".join(map(str, part)))
-    return dict(school=join(d[0:5]), grade=join(d[5:6]),
-                ban=join(d[6:8]), num=join(d[8:10]), raw=d)
+    if len(d) >= 10:
+        return dict(school=join(d[0:5]), grade=join(d[5:6]),
+                    ban=join(d[6:8]), num=join(d[8:10]), raw=d)
+    if len(d) == 5:
+        return dict(school=None, grade=join(d[0:1]),
+                    ban=join(d[1:3]), num=join(d[3:5]), raw=d)
+    return dict(school=None, grade=None, ban=None, num=None, raw=d)
 
 
 def read_name(gray: np.ndarray, grid: dict, fill_min: float = 50.0) -> dict:

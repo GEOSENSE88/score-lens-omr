@@ -189,17 +189,24 @@ SCHOOL_CODE = 19718   # 산남고 — 수험번호 읽기-검증 기준
 
 def _id_readback_pick(img: np.ndarray, tmpl: dict, pitch: float,
                       cands: list[int]) -> int | None:
-    """후보 시프트들로 수험번호를 읽어 학교코드가 일치하는 '유일한' 후보를 반환."""
+    """후보 시프트들로 수험번호를 읽어 검증 기준을 만족하는 '유일한' 후보 반환.
+
+    - 학평(10열): 학교코드 == SCHOOL_CODE
+    - 충북(5열, 학교번호 없음): 학년==3 이고 반·번호가 완전 판독"""
     idg = next((g for g in tmpl.get("grids", []) if g["name"] == "id"), None)
     if idg is None or not cands:
         return None
     import hp_id
     gray = pencil_gray(img)
+    has_school = len(idg["xs"]) >= 10
     hits = []
     for k in cands:
         xs = [x + k * pitch for x in idg["xs"]]
         rid = hp_id.read_id(gray, dict(idg, xs=xs))
-        if rid.get("school") == SCHOOL_CODE:
+        ok = (rid.get("school") == SCHOOL_CODE) if has_school else \
+             (rid.get("grade") == 3 and rid.get("ban") is not None
+              and rid.get("num") is not None)
+        if ok:
             hits.append(k)
     return hits[0] if len(hits) == 1 else None
 
@@ -226,7 +233,7 @@ def rectified_pages(pdf: Path, ref: dict, limit: int | None = None,
 
 
 def calibrate(spec: dict, pdf: Path, ref: dict | None = None,
-              prior: dict | None = None) -> dict:
+              prior: dict | None = None, blob_fn=None) -> dict:
     # 열(xs): 상단 타이밍 마크에서 블록 x범위 안의 5개 = 정확한 열좌표(드리프트무관).
     # 행(ys): 빨강+검정 블롭 행중심 투표(마킹돼도 위치 잡힘).
     per = {blk["q0"]: {"xs": [], "rowc": [], "cols": []} for blk in spec["objective"]}
@@ -237,9 +244,12 @@ def calibrate(spec: dict, pdf: Path, ref: dict | None = None,
                  for _, im in rectified_pages(p, ref, tmpl=prior) if im is not None)
     else:
         pages = (im for p in pdfs for im in oriented_pages(p))
+    if blob_fn is None:
+        blob_fn = bubble_blobs   # 기본: 인쇄원+마킹. 인쇄원 검출이 안 되는
+        # 카드(충북 — 초록 표선이 병합됨)는 mark_blobs(마킹만)로 다페이지 합의.
     for img in pages:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        blobs = bubble_blobs(img)
+        blobs = blob_fn(img)
         if len(blobs) == 0:
             continue
         npages += 1

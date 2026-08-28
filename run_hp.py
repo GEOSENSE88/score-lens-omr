@@ -38,6 +38,10 @@ SUBJ_SETUP = {  # 과목 라벨 → (템플릿들, hp_run kind, csv 파일명 su
     "한국사": (["history_g3hp"], "history", "_한국사_판독표.csv"),
     "탐구": (["expl1_g3hp", "expl2_g3hp"], "explore", "_탐구_판독표.csv"),
 }
+# 충북교육청 모의평가 카드(--card cb) — 카드 스캔이 확보된 과목만 보정됨
+SUBJ_SETUP_CB = {
+    "국어": (["korean_g3cb"], "korean", "_점수표.csv"),
+}
 
 # ── 페이지 워커 (Windows spawn 안전: 모듈 전역 + initializer) ─────
 _W: dict = {}
@@ -93,6 +97,26 @@ def read_pdf(pdf: Path, tnames: list[str], kind: str, workers: int,
 
 
 # ── 채점·CSV 행 구성 ──────────────────────────────────────────────
+def load_keys_tolerant(keys_dir: Path, exam: str) -> dict:
+    """정답키 적재 — 없는 파일은 건너뛴다(EBSi 미등록 시험: 판독표만 생성).
+    hp_run.load_keys(전 과목 필수)와 달리 과목별 부분 적재를 허용한다."""
+    def _try(p: Path):
+        return hp_run._load_json(p) if p.exists() else None
+    k: dict = {}
+    k["history"] = _try(keys_dir / f"{exam}_한국사_xip_api.json")
+    k["english"] = _try(keys_dir / f"{exam}_영어_xip_api.json")
+    k["korean"] = {el: v for el in ("화법과작문", "언어와매체")
+                   if (v := _try(keys_dir / f"{exam}_국어_{el}.json"))}
+    k["math"] = {el: v for el in ("확률과통계", "미적분", "기하")
+                 if (v := _try(keys_dir / f"{exam}_수학_{el}.json"))}
+    k["explore"] = {}
+    for code, name in hp_run.EXPL_CODES.items():
+        v = _try(keys_dir / f"{exam}_{name}_xip_api.json")
+        if v:
+            k["explore"][code] = (name, v)
+    return k
+
+
 def _load_names(path: Path | None) -> dict:
     if not path or not path.exists():
         return {}
@@ -177,7 +201,9 @@ def rows_for(kind: str, recs: list[dict], keys: dict, names: dict) -> list[dict]
         elif kind == "korean":
             ch = rec.get("choice")
             row.update({str(q): _ans_str(a) for q, a in rec["ans"].items()})
-            if ch in keys["korean"]:
+            if not keys["korean"]:            # 정답키 미등록 — 판독표만
+                row.update(선택과목=ch or "", 원점수="", 만점="")
+            elif ch in keys["korean"]:
                 key = keys["korean"][ch]
                 sc = hp_run.score_simple(rec["ans"], key)
                 wrong = sorted(q for q, a in rec["ans"].items()
@@ -314,6 +340,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("pdf", type=Path)
     ap.add_argument("--subject", required=True, choices=list(SUBJ_SETUP))
+    ap.add_argument("--card", default="hp", choices=("hp", "cb"),
+                    help="카드 양식: hp=전국연합 학평 / cb=충북교육청 모의평가")
     ap.add_argument("--keys-dir", type=Path, default=HERE / "keys")
     ap.add_argument("--irecord", default=None)
     ap.add_argument("--out", type=Path, required=True)
@@ -326,10 +354,18 @@ def main() -> int:
                     default=int(os.environ.get("OMR_WORKERS", "0")) or auto)
     a = ap.parse_args()
 
-    tnames, kind, suffix = SUBJ_SETUP[a.subject]
+    setup = SUBJ_SETUP_CB if a.card == "cb" else SUBJ_SETUP
+    if a.subject not in setup:
+        print(f"[오류] {a.subject}: 충북 카드가 아직 보정되지 않았습니다 "
+              "(카드 스캔 확보 후 work/hp_cb/calibrate_cb.py 로 보정)", flush=True)
+        return 1
+    tnames, kind, suffix = setup[a.subject]
     if not a.irecord:
         print("경고: --irecord 미지정 — 정답키 매칭이 모호할 수 있습니다.", flush=True)
-    keys = hp_run.load_keys(a.keys_dir, a.irecord or "")
+    keys = load_keys_tolerant(a.keys_dir, a.irecord or "")
+    if kind == "korean" and not keys["korean"]:
+        print("정답키 없음 — 채점 없이 판독표만 생성합니다 (키 등록 후 재실행 시 채점).",
+              flush=True)
     names = _load_names(a.names)
     a.out.mkdir(parents=True, exist_ok=True)
 

@@ -20,6 +20,7 @@ document.querySelectorAll("#gradeSeg button").forEach(b => {
 
 /* ── 시험 선택 드롭다운 ── */
 const HP_MONTHS = [3, 4, 7, 10];   // 전국연합 학력평가 시행 월
+const CB_MONTHS = [8];             // 충북교육청 모의평가
 
 function examMonth(examId){
   const m = /^\d{4}(\d{2})\d{2}\d$/.exec(examId || "");
@@ -31,9 +32,10 @@ function updateCardBadge(){
   if (!el) return;
   const mo = examMonth($("#exam_select").value);
   if (grade === 3 && mo != null){
-    const hp = HP_MONTHS.includes(mo);
-    el.textContent = hp
-      ? "🗂 전국연합 학력평가(교육청) 카드로 판독 — 수험번호·선택과목·탐구코드 자동 인식"
+    el.textContent = HP_MONTHS.includes(mo)
+      ? "🗂 전국연합 학력평가(교육청) 카드로 판독 — 수험번호·성명·선택과목·탐구코드 자동 인식"
+      : CB_MONTHS.includes(mo)
+      ? "🗂 충북교육청 모의평가 카드로 판독 — 현재 국어 보정 완료 (타 과목은 카드 스캔 후 활성화)"
       : "🗂 대수능 모의평가(평가원) 카드로 판독";
     el.style.display = "block";
   } else el.style.display = "none";

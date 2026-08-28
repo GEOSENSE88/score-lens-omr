@@ -355,6 +355,33 @@ _G3_HP = [
          id_layout=None, csv_kind="explore", csv_suffix="_탐구_판독표.csv"),
 ]
 HP_MONTHS = {3, 4, 7, 10}   # 전국연합 학력평가 시행 월
+CB_MONTHS = {8}             # 충북교육청 모의평가(수능 대비 자체 시행)
+
+# 충북교육청 모의평가 카드 — 실물 스캔이 보정된 과목만 활성(현재 국어).
+# 다른 과목은 카드 스캔 확보 후 work/hp_cb/calibrate_cb.py 로 보정하면
+# 템플릿 파일이 생기면서 자동 활성화된다.
+_G3_CB = [
+    dict(key="korean", label="국어", icon="가", script="run_hp.py",
+         subject_arg="국어", card="cb", names=True,
+         template="templates/korean_g3cb.json", id_layout=None,
+         csv_kind="korean", csv_suffix="_점수표.csv"),
+    dict(key="math", label="수학", icon="∑", script="run_hp.py",
+         subject_arg="수학", card="cb", names=True,
+         template="templates/math_g3cb.json", id_layout=None,
+         csv_kind="math", csv_suffix="_수학_점수표.csv"),
+    dict(key="english", label="영어", icon="A", script="run_hp.py",
+         subject_arg="영어", card="cb", names=True,
+         template="templates/english_g3cb.json", id_layout=None,
+         csv_kind="english", csv_suffix="_영어_판독표.csv"),
+    dict(key="history", label="한국사", icon="史", script="run_hp.py",
+         subject_arg="한국사", card="cb", names=True,
+         template="templates/history_g3cb.json", id_layout=None,
+         csv_kind="history", csv_suffix="_한국사_판독표.csv"),
+    dict(key="explore", label="탐구", icon="探", script="run_hp.py",
+         subject_arg="탐구", card="cb", names=True,
+         template="templates/expl1_g3cb.json", id_layout=None,
+         csv_kind="explore", csv_suffix="_탐구_판독표.csv"),
+]
 
 
 def _exam_month(exam_id: str | None) -> int | None:
@@ -363,9 +390,13 @@ def _exam_month(exam_id: str | None) -> int | None:
 
 
 def catalog_for(grade: int, exam_id: str | None) -> list[dict]:
-    """학년+시험으로 판독 카탈로그 선택 — 고3 학평이면 학평 카드 판독기."""
-    if grade == 3 and _exam_month(exam_id) in HP_MONTHS:
-        return _G3_HP
+    """학년+시험으로 판독 카탈로그 선택 — 고3 학평/충북모평이면 해당 카드 판독기."""
+    if grade == 3:
+        mo = _exam_month(exam_id)
+        if mo in HP_MONTHS:
+            return _G3_HP
+        if mo in CB_MONTHS:
+            return _G3_CB
     return SUBJECTS_BY_GRADE[grade]
 
 
@@ -436,6 +467,8 @@ def run_reader(spec: dict, pdf: Path, *, exam_id: str | None, names: Path | None
         cmd += ["--template", str(ROOT / spec["template"])]
     if spec.get("id_layout") and spec["script"] == "run_objective.py":
         cmd += ["--id-layout", spec["id_layout"]]
+    if spec.get("card"):
+        cmd += ["--card", spec["card"]]
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -566,9 +599,11 @@ def process_job(job_id: str, run_output_dir: Path, grade: int,
     csv_by_kind: dict[str, str] = {}
     try:
         update_job(job_id, status="running", total=len(requested), completed=0, ok=None)
+        card0 = requested[0][0].get("card") if requested else None
         is_hp = requested and requested[0][0].get("script") == "run_hp.py"
-        card = "전국연합 학력평가(교육청)" if is_hp else \
-               ("대수능 모의평가(평가원)" if grade == 3 else f"고{grade} 학력평가")
+        card = "충북교육청 모의평가" if card0 == "cb" else \
+               ("전국연합 학력평가(교육청)" if is_hp else
+                ("대수능 모의평가(평가원)" if grade == 3 else f"고{grade} 학력평가"))
         append_event(job_id, f"고{grade} 답안지 {len(requested)}과목 채점을 시작합니다 "
                              f"— {card} 카드로 판독", kind="info")
 
