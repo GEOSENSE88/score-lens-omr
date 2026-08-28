@@ -39,6 +39,21 @@ def bubble_blobs(img: np.ndarray) -> np.ndarray:
     return np.array(out)
 
 
+def print_blobs(img: np.ndarray) -> np.ndarray:
+    """빨강 인쇄 원 블롭 (cx,cy) — 백지 서식 보정용(연한 인쇄 완화 임계).
+
+    백지 카드의 인쇄 원은 모든 칸에 있어 마킹 없이도 완전한 격자 데이터가 된다
+    (충북 수학/영어 서식 실측 450+개). r-g 조건으로 초록 표선·글자를 배제."""
+    b, g, r = cv2.split(img.astype(int))
+    red = (((r - b) > 18) & ((r - g) > 12) & (r > 130)).astype("uint8") * 255
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    mor = cv2.morphologyEx(red, cv2.MORPH_CLOSE, k, iterations=2)
+    n, _, st, ct = cv2.connectedComponentsWithStats(mor, 8)
+    out = [ct[i] for i in range(1, n)
+           if 12 <= st[i][2] <= 60 and 14 <= st[i][3] <= 60 and st[i][4] > 100]
+    return np.array(out) if out else np.empty((0, 2))
+
+
 def mark_blobs(img: np.ndarray) -> np.ndarray:
     """학생 마킹(속이 찬 검정 덩어리)만의 블롭 (cx,cy) — 인쇄색·배경색 무관.
 

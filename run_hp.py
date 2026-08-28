@@ -41,6 +41,8 @@ SUBJ_SETUP = {  # 과목 라벨 → (템플릿들, hp_run kind, csv 파일명 su
 # 충북교육청 모의평가 카드(--card cb) — 카드 스캔이 확보된 과목만 보정됨
 SUBJ_SETUP_CB = {
     "국어": (["korean_g3cb"], "korean", "_점수표.csv"),
+    "수학": (["math_g3cb"], "math", "_수학_점수표.csv"),
+    "영어": (["english_g3cb"], "english", "_영어_판독표.csv"),
 }
 
 # ── 페이지 워커 (Windows spawn 안전: 모듈 전역 + initializer) ─────
@@ -188,16 +190,19 @@ def rows_for(kind: str, recs: list[dict], keys: dict, names: dict) -> list[dict]
         row = dict(ident)
         row["페이지"] = rec["page"] + 1
         if kind == "history":
+            row.update({str(q): _ans_str(a) for q, a in rec["ans"].items()})
             key = keys["history"]
-            sc = hp_run.score_simple(rec["ans"], key)
-            wrong = [q for q, a in rec["ans"].items() if a != int(key["answers"][str(q)])]
-            row.update(점수=sc, 만점=50)
-            row.update({str(q): _ans_str(a) for q, a in rec["ans"].items()})
-            _ = wrong
+            if key:                           # 정답키 미등록 — 판독표만
+                row.update(점수=hp_run.score_simple(rec["ans"], key), 만점=50)
+            else:
+                row.update(점수="", 만점="")
         elif kind == "english":
-            sc = hp_run.score_simple(rec["ans"], keys["english"])
-            row.update(점수=sc, 만점=100)
             row.update({str(q): _ans_str(a) for q, a in rec["ans"].items()})
+            if keys["english"]:               # 정답키 미등록 — 판독표만
+                row.update(점수=hp_run.score_simple(rec["ans"], keys["english"]),
+                           만점=100)
+            else:
+                row.update(점수="", 만점="")
         elif kind == "korean":
             ch = rec.get("choice")
             row.update({str(q): _ans_str(a) for q, a in rec["ans"].items()})
@@ -222,7 +227,9 @@ def rows_for(kind: str, recs: list[dict], keys: dict, names: dict) -> list[dict]
             for q in range(1, 31):
                 v = rec["ans"].get(q) if (q <= 15 or 23 <= q <= 28) else rec["sa"].get(q)
                 row[str(q)] = _ans_str(v)
-            if ch in keys["math"]:
+            if not keys["math"]:              # 정답키 미등록 — 판독표만
+                row.update(선택과목=ch or "", 원점수="", 만점="")
+            elif ch in keys["math"]:
                 qs = keys["math"][ch]["questions"]
                 sc, wrong = 0, []
                 for q, meta in qs.items():
@@ -247,6 +254,10 @@ def rows_for(kind: str, recs: list[dict], keys: dict, names: dict) -> list[dict]
                 pre = f"제{k}선택"
                 if hp_run.is_blank(ans) and code is None:
                     continue               # 해당 선택 미응시
+                if not keys["explore"]:       # 정답키 미등록 — 판독표만
+                    row[f"{pre}코드"] = code
+                    row.update({f"{pre}_{q}": _ans_str(a) for q, a in ans.items()})
+                    continue
                 if code not in keys["explore"]:
                     fl.append(f"탐{k}코드이상:{code}")
                     continue

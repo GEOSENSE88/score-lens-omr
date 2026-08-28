@@ -22,7 +22,8 @@ import hp_g3
 
 def _union_vote(vals_per_page: list[list[float]], want: int, npages: int,
                 what: str, lo: float, hi: float,
-                sparse_idx: int | None = None) -> list[float]:
+                sparse_idx: int | None = None,
+                pitch_hint: float | None = None) -> list[float]:
     """페이지별 군집 좌표의 합집합을 다시 군집 → 다수 페이지 재현 좌표만.
 
     인쇄가 흐린 카드(예: 국어 수험번호 원)는 페이지당 절반만 잡혀도 여러
@@ -51,10 +52,13 @@ def _union_vote(vals_per_page: list[list[float]], want: int, npages: int,
         return [round(c, 1) for c in cen]
     if len(cen) < 2:
         raise RuntimeError(f"{what}: 좌표 부족 — {[round(c) for c in cen]}")
-    d = [b - a for a, b in zip(cen, cen[1:])]
-    m = float(np.median(d))
-    good = [x for x in d if 0.7 * m <= x <= 1.3 * m]
-    pitch = float(np.median(good)) if good else m
+    if pitch_hint:
+        pitch = float(pitch_hint)   # 인쇄 규격 기지(열 60.3 등) — 관측 부족 그리드
+    else:
+        d = [b - a for a, b in zip(cen, cen[1:])]
+        m = float(np.median(d))
+        good = [x for x in d if 0.7 * m <= x <= 1.3 * m]
+        pitch = float(np.median(good)) if good else m
     cands = sorted({c - pitch * k for c in cen for k in range(want)
                     if lo <= c - pitch * k and c - pitch * k + pitch * (want - 1) <= hi})
     if not cands:
@@ -73,19 +77,22 @@ def _union_vote(vals_per_page: list[list[float]], want: int, npages: int,
     else:
         y0 = max(tied, key=fit)
     # 관측 군집 대부분이 격자에 얹혀야 — 손글씨 획 등 격자 밖 잡음 소수 허용
-    need = max(3, int(0.75 * min(len(cen), want)))
+    need = max(2, int(0.75 * min(len(cen), want)))
     if fit(y0)[0] < need:
         raise RuntimeError(f"{what}: 격자 적합 실패 (매칭 {fit(y0)[0]}/{want}) — "
                            f"{[round(c) for c in cen]}")
     return [round(y0 + pitch * k, 1) for k in range(want)]
 
 
-def calibrate_extras(spec: dict, pages) -> dict:
-    """rectify 된 페이지 이터러블에서 grids/selects 좌표 합의(합집합 투표)."""
+def calibrate_extras(spec: dict, pages, blob_fn=None) -> dict:
+    """rectify 된 페이지 이터러블에서 grids/selects 좌표 합의(합집합 투표).
+    blob_fn 기본은 마킹만(mark_blobs) — 백지 서식 보정은 print_blobs 전달."""
+    if blob_fn is None:
+        blob_fn = hp_g3.mark_blobs      # 마킹만 — 인쇄색·배경색 무관
     grids = {g["name"]: {"cols": [], "rows": [], "g": g} for g in spec.get("grids", [])}
     npages = 0
     for img in pages:
-        blobs = hp_g3.mark_blobs(img)   # 마킹만 — 인쇄색·배경색 무관
+        blobs = blob_fn(img)
         if len(blobs) == 0:
             continue
         npages += 1
@@ -107,9 +114,11 @@ def calibrate_extras(spec: dict, pages) -> dict:
                            # id(10열 학평): 학년열(6번째) 희박 / sa: 백의자리 희박
                            # (충북 5열 id 는 전 열이 균등 마킹이라 규칙 불필요)
                            sparse_idx=5 if (name == "id" and g["ncols"] >= 10)
-                           else (0 if name.startswith("sa") else None)),
+                           else (0 if name.startswith("sa") else None),
+                           pitch_hint=g.get("pitch_x")),
             ys=_union_vote(st["rows"], g["nrows"], npages, f"그리드 {name} 행",
-                           g["y_lo"], g["y_hi"])))
+                           g["y_lo"], g["y_hi"],
+                           pitch_hint=g.get("pitch_y"))))
     # 선택박스는 라벨 글자와 블롭이 붙어 자동합의가 불안정 → spec 의 고정좌표
     # (정렬 프레임에서 실측)를 그대로 신뢰해 템플릿으로 복사한다.
     if "selects" in spec:
