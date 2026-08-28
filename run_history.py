@@ -141,10 +141,10 @@ def main() -> int:
         print(f"p{i:02d} {name:<5} {sid['ban']}-{sid['beon']} score {row['score']}/{row['max_score']}")
 
     xlsx, csvp = write_outputs(rows, args.out, args.pdf.stem, key)
-    flagged = sorted({r["page"] for r in rows if r.get("warn")})
-    if flagged:
-        hc.oc.save_review_images(args.pdf, flagged, args.out, args.dpi)
-        print(f"검토용 카드 이미지 {len(flagged)}장 저장 (review_imgs/)")
+    pages = sorted({r["page"] for r in rows})    # 전 학생 — 정상 카드도 원본 대조
+    if pages:
+        hc.oc.save_review_images(args.pdf, pages, args.out, args.dpi)
+        print(f"검토용 카드 이미지 {len(pages)}장 저장 (review_imgs/)")
     print(f"완료:\n  {xlsx}\n  {csvp}")
     return 0
 

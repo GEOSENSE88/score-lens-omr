@@ -397,6 +397,14 @@
     padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;
   }
   .rv-card:hover{background:#FFE8DB}
+  .rv-card.quiet{border-color:var(--line);background:#fff;color:var(--ink-soft)}
+  .rv-card.quiet:hover{border-color:var(--primary-2);color:var(--primary-2);background:var(--sky-soft)}
+  /* 수학 단답형(16~22·29~30) 인라인 직접 입력 */
+  .rv-q.sa input.sa-edit{
+    display:block;width:40px;margin:0 auto;padding:1px 0;text-align:center;
+    font-size:14px;font-weight:800;font-family:inherit;border:1.5px solid var(--primary-2);
+    border-radius:6px;outline:none;
+  }
   #cardModal{
     display:none;position:fixed;inset:0;z-index:1000;background:rgba(15,30,40,.55);
     align-items:center;justify-content:center;padding:24px;

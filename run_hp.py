@@ -49,7 +49,8 @@ SUBJ_SETUP_CB = {
 _W: dict = {}
 
 
-def _winit(pdf_path: str, tnames: list[str], kind: str, dpi: int = 300):
+def _winit(pdf_path: str, tnames: list[str], kind: str, dpi: int = 300,
+           img_dir: str | None = None):
     import os
     # 프로세스 병렬 × OpenCV 내부 스레드 과경쟁 조절 (실측상 1~4 차이는 노이즈
     # 수준 — vCPU 적은 서버에 안전한 1을 기본값으로)
@@ -59,6 +60,21 @@ def _winit(pdf_path: str, tnames: list[str], kind: str, dpi: int = 300):
                    for n in tnames]
     _W["kind"] = kind
     _W["dpi"] = dpi
+    _W["img_dir"] = img_dir
+
+
+def _wsave_review(i: int, img: np.ndarray) -> None:
+    """페이지 카드 이미지(JPEG) 저장 — 웹 '카드 보기'용. 워커가 정렬본을 들고
+    있을 때 저장하므로 재렌더 비용이 없다. 전 페이지 저장(정상 학생도 원본
+    대조 가능)."""
+    d = _W.get("img_dir")
+    if not d:
+        return
+    h, w = img.shape[:2]
+    small = cv2.resize(img, (1400, round(h * 1400 / w)), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 78])
+    if ok:
+        buf.tofile(str(Path(d) / f"p{i + 1}.jpg"))
 
 
 def _wpage(i: int) -> dict:
@@ -68,7 +84,9 @@ def _wpage(i: int) -> dict:
     try:
         out, info = hp_g3.rectify_verified(img, _W["tmpls"][0])
     except hp_align.AlignError as e:
+        _wsave_review(i, img)               # 정렬 실패면 원본이라도 보여준다
         return dict(page=i, error=f"정렬실패:{e}")
+    _wsave_review(i, out)
     rec = hp_run.read_page(_W["kind"], _W["tmpls"], out)   # 성명 포함(단일 gray)
     if info.get("gray_scan"):
         rec["gray_scan"] = True
@@ -77,20 +95,23 @@ def _wpage(i: int) -> dict:
 
 
 def read_pdf(pdf: Path, tnames: list[str], kind: str, workers: int,
-             dpi: int = 300) -> list[dict]:
+             dpi: int = 300, img_dir: Path | None = None) -> list[dict]:
     doc = fitz.open(str(pdf))
     n = doc.page_count
     doc.close()
+    if img_dir is not None:
+        img_dir.mkdir(parents=True, exist_ok=True)
+    idir = str(img_dir) if img_dir is not None else None
     recs = []
     if workers <= 1:
-        _winit(str(pdf), tnames, kind, dpi)
+        _winit(str(pdf), tnames, kind, dpi, idir)
         for i in range(n):
             recs.append(_wpage(i))
             print(f"PROGRESS {i + 1}/{n}", flush=True)
         _W["doc"].close()
     else:
         with Pool(processes=min(workers, n), initializer=_winit,
-                  initargs=(str(pdf), tnames, kind, dpi)) as pool:
+                  initargs=(str(pdf), tnames, kind, dpi, idir)) as pool:
             for k, rec in enumerate(pool.imap_unordered(_wpage, range(n)), 1):
                 recs.append(rec)
                 print(f"PROGRESS {k}/{n}", flush=True)
@@ -298,35 +319,6 @@ def write_outputs(rows: list[dict], out_dir: Path, stem: str, suffix: str, label
     return csv_path
 
 
-def save_review_images(pdf: Path, tnames: list[str], rows: list[dict],
-                       out_dir: Path, dpi: int) -> int:
-    """확인필요 행의 페이지를 정렬된 카드 이미지(JPEG)로 저장 — 웹 검토 UI 가
-    '카드 보기'로 띄워 수험번호·성명을 원본 대조하며 고칠 수 있게 한다.
-    정렬 실패 페이지는 원본 그대로 저장한다."""
-    pages = sorted({int(r["페이지"]) for r in rows if r.get("확인필요") and r.get("페이지")})
-    if not pages:
-        return 0
-    img_dir = out_dir / "review_imgs"
-    img_dir.mkdir(exist_ok=True)
-    tmpl = json.loads((HERE / "templates" / f"{tnames[0]}.json").read_text(encoding="utf-8"))
-    doc = fitz.open(str(pdf))
-    for p1 in pages:
-        pix = doc[p1 - 1].get_pixmap(dpi=dpi)
-        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR if pix.n == 4 else cv2.COLOR_RGB2BGR)
-        try:
-            img, _ = hp_g3.rectify_verified(img, tmpl)
-        except hp_align.AlignError:
-            pass                            # 정렬 실패면 원본이라도 보여준다
-        h, w = img.shape[:2]
-        small = cv2.resize(img, (1400, round(h * 1400 / w)), interpolation=cv2.INTER_AREA)
-        ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 78])
-        if ok:
-            buf.tofile(str(img_dir / f"p{p1}.jpg"))
-    doc.close()
-    return len(pages)
-
-
 def _write_meta(out_dir: Path, tnames: list[str]) -> None:
     """재현성 기록: 코드 버전(git) + 템플릿 해시 — 결과물이 어느 보정본으로
     만들어졌는지 추적 가능하게 한다."""
@@ -381,12 +373,11 @@ def main() -> int:
     a.out.mkdir(parents=True, exist_ok=True)
 
     print(f"{a.subject}: 학평 카드 판독 시작 ({a.pdf.name}, workers={a.workers}, dpi={a.dpi})", flush=True)
-    recs = read_pdf(a.pdf, tnames, kind, a.workers, dpi=a.dpi)
+    recs = read_pdf(a.pdf, tnames, kind, a.workers, dpi=a.dpi,
+                    img_dir=a.out / "review_imgs")
     rows = rows_for(kind, recs, keys, names)
     csv_path = write_outputs(rows, a.out, a.pdf.stem, suffix, a.subject)
-    nimg = save_review_images(a.pdf, tnames, rows, a.out, a.dpi)
-    if nimg:
-        print(f"검토용 카드 이미지 {nimg}장 저장 (review_imgs/)", flush=True)
+    print(f"검토용 카드 이미지 {len(recs)}장 저장 (review_imgs/)", flush=True)
     _write_meta(a.out, tnames)
 
     nfail = sum(1 for r in recs if r.get("error"))

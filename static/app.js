@@ -452,8 +452,8 @@ function rowHtml(s, idx){
   const d = subjData(s, curSubject);
   const stt = readStatus(d);
   const open = expanded.has(idx);
-  const cardBtn = (stt.flag && d.페이지)
-    ? `<button class="rv-card" data-page="${d.페이지}" title="스캔 원본을 보며 수험번호·성명을 고치세요">🔍 카드 보기</button> `
+  const cardBtn = d.페이지
+    ? `<button class="rv-card ${stt.flag?'':'quiet'}" data-page="${d.페이지}" title="스캔 원본을 보며 답안·수험번호·성명을 대조하세요">🔍 카드 보기</button> `
     : "";
   let html = `<tr class="stu ${stt.flag?'flag':''}">
     <td><input class="rv-cell-edit sm" data-idx="${idx}" data-field="반" value="${esc(s.반)}"></td>
@@ -474,11 +474,20 @@ function rowHtml(s, idx){
   return html;
 }
 
+// 수학 단답형(16~22·29~30)은 0~999 — 드롭다운 대신 직접 입력
+function isShortAns(q){
+  return curSubject === "수학" && ((q >= 16 && q <= 22) || q === 29 || q === 30);
+}
+
 function qHtml(idx, c){
   const a = c.답;
   const cls = c.ok ? "ok" : (a === 0 || a === -1 ? "blank" : "wrong");
   const shown = ANS_LABEL[a] !== undefined ? ANS_LABEL[a] : (a ?? "·");
   const corr = !c.ok ? `<span class="qc">${c.정답 ?? ""}</span>` : `<span class="qc"></span>`;
+  if (isShortAns(c.q))
+    return `<div class="rv-q ${cls} sa" data-idx="${idx}" data-q="${c.q}" title="눌러서 0~999 직접 입력">
+      <span class="qn">${c.q}</span><span class="qa">${shown}</span>${corr}
+    </div>`;
   const opts = [["0","·"],["1","1"],["2","2"],["3","3"],["4","4"],["5","5"],["-1","중복"]]
     .map(([v,l]) => `<option value="${v}" ${String(a)===v?"selected":""}>${l}</option>`).join("");
   return `<div class="rv-q ${cls}">
@@ -490,6 +499,35 @@ function qHtml(idx, c){
 function bindGrid(){
   $$("#rvBody .rv-q select").forEach(sel => sel.addEventListener("change", () =>
     saveAnswer(+sel.dataset.idx, +sel.dataset.q, +sel.value)));
+  $$("#rvBody .rv-q.sa").forEach(cell => cell.addEventListener("click", () => {
+    if (cell.querySelector("input")) return;
+    const idx = +cell.dataset.idx, q = +cell.dataset.q;
+    const qa = cell.querySelector(".qa");
+    const cur = qa.textContent.trim();
+    const inp = document.createElement("input");
+    inp.className = "sa-edit";
+    inp.type = "text"; inp.inputMode = "numeric"; inp.maxLength = 3;
+    inp.value = /^\d+$/.test(cur) ? cur : "";
+    inp.placeholder = "·";
+    qa.style.display = "none";
+    cell.appendChild(inp);
+    inp.focus(); inp.select();
+    let done = false;
+    const finish = save => {
+      if (done) return; done = true;
+      const raw = inp.value.trim();
+      inp.remove(); qa.style.display = "";
+      if (!save) return;
+      if (raw === ""){ saveAnswer(idx, q, 0); return; }     // 빈칸 = 미마킹
+      if (!/^\d{1,3}$/.test(raw)){ showAlert("단답형은 0~999 숫자만 입력할 수 있습니다."); return; }
+      saveAnswer(idx, q, parseInt(raw, 10));
+    };
+    inp.addEventListener("keydown", e => {
+      if (e.key === "Enter") finish(true);
+      else if (e.key === "Escape") finish(false);
+    });
+    inp.addEventListener("blur", () => finish(true));
+  }));
 }
 
 async function postEdit(payload){

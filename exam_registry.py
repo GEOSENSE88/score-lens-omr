@@ -379,6 +379,8 @@ def exam_label(exam_id: str) -> str:
     if not m:
         return str(exam_id)
     y, mo, g = m.group(1), int(m.group(2)), m.group(3)
+    if g == "3" and mo == 8:                # 충북교육청 모의평가 (web_app.CB_MONTHS)
+        return f"{y}년 충북교육 모의평가 ({mo}월)"
     return f"{y}년 {mo}월 모의고사 (고{g})"
 
 

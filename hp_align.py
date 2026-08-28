@@ -167,32 +167,45 @@ def _match_to_ref(xr: np.ndarray, ref_xs: np.ndarray):
     if page_p <= 4:
         return None
     s0 = ref_p / page_p
-    # 이동량 후보: 모든 (ref - s0*x) 차이의 최빈 구간
+    # 이동량 후보: 모든 (ref - s0*x) 차이의 최빈 구간. 마크열이 격자 주기라
+    # 최빈 모드가 한 pitch 어긋난 국소해일 수 있음(잘못 수렴하면 매칭수가
+    # 줄고 잔차가 커져 QC 에 걸림) → b0±k*pitch 를 전부 적합해 최선을 취한다.
     d = (ref_xs[None, :] - s0 * xr[:, None]).ravel()
     hist, edges = np.histogram(d, bins=np.arange(d.min() - 10, d.max() + 10, 8))
     b0 = float(edges[np.argmax(hist)] + 4)
-    # 1:1 매칭(기준 마크당 입력 마크 1개 — 잔차 최소인 것) → 최소자승 재적합 2회.
-    # 최근접만 쓰면 여러 입력이 같은 기준 마크에 몰려 nmatch 가 부풀고,
-    # 불량 정렬이 QC 를 통과할 수 있다.
-    s, b = s0, b0
-    pairs = None
-    for _ in range(2):
-        proj = s * xr + b
-        idx = np.abs(ref_xs[None, :] - proj[:, None]).argmin(axis=1)
-        res = np.abs(ref_xs[idx] - proj)
-        keep, seen = [], set()
-        for j in np.argsort(res):                 # 잔차 작은 순으로 기준마크 선점
-            if res[j] < 14 and idx[j] not in seen:
-                seen.add(int(idx[j]))
-                keep.append(j)
-        if len(keep) < 8:
-            return None
-        keep = np.array(keep)
-        pairs = (xr[keep], ref_xs[idx[keep]])
-        s, b = np.polyfit(pairs[0], pairs[1], 1)
-    resid = np.abs(pairs[1] - (s * pairs[0] + b))
-    return (float(s), float(b), int(len(pairs[0])),
-            float(np.median(resid)), float(np.percentile(resid, 90)))
+
+    def refit(b_init):
+        # 1:1 매칭(기준 마크당 입력 마크 1개 — 잔차 최소인 것) → 최소자승
+        # 재적합 2회. 최근접만 쓰면 여러 입력이 같은 기준 마크에 몰려
+        # nmatch 가 부풀고, 불량 정렬이 QC 를 통과할 수 있다.
+        s, b = s0, b_init
+        pairs = None
+        for _ in range(2):
+            proj = s * xr + b
+            idx = np.abs(ref_xs[None, :] - proj[:, None]).argmin(axis=1)
+            res = np.abs(ref_xs[idx] - proj)
+            keep, seen = [], set()
+            for j in np.argsort(res):             # 잔차 작은 순으로 기준마크 선점
+                if res[j] < 14 and idx[j] not in seen:
+                    seen.add(int(idx[j]))
+                    keep.append(j)
+            if len(keep) < 8:
+                return None
+            keep = np.array(keep)
+            pairs = (xr[keep], ref_xs[idx[keep]])
+            s, b = np.polyfit(pairs[0], pairs[1], 1)
+        resid = np.abs(pairs[1] - (s * pairs[0] + b))
+        return (float(s), float(b), int(len(pairs[0])),
+                float(np.median(resid)), float(np.percentile(resid, 90)))
+
+    best = None
+    for k in range(-2, 3):
+        r = refit(b0 + k * ref_p)
+        if r is None:
+            continue
+        if best is None or (r[2], -r[3]) > (best[2], -best[3]):
+            best = r
+    return best
 
 
 def rectify(bgr: np.ndarray, ref: dict) -> tuple[np.ndarray, dict]:
