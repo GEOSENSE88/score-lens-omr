@@ -64,6 +64,11 @@
   }
   .brand-credit a{color:#BBE1FA;text-decoration:none}
   .brand-credit a:hover{text-decoration:underline}
+  .brand-credit a.guide-link{
+    display:inline-block;margin-left:2px;padding:2px 10px;border-radius:999px;
+    border:1px solid rgba(187,225,250,.55);color:#fff;font-weight:700;
+  }
+  .brand-credit a.guide-link:hover{background:rgba(187,225,250,.18);text-decoration:none}
   .brand p .hl{color:#FBDE37;font-weight:800}          /* 자동 채점 */
   .brand p .hl2{color:#8CE6C0;font-weight:800}         /* 성적표 */
   .brand p .arrow{color:var(--sky);font-weight:800;margin:0 3px}

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사용 안내 — OMR Lens</title>
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ static_v }}">
+<style>
+  .g-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+  .g-back{
+    display:inline-block;border:1.5px solid var(--line);background:#fff;color:var(--primary);
+    border-radius:10px;padding:8px 16px;font-size:13px;font-weight:700;text-decoration:none;
+  }
+  .g-back:hover{border-color:var(--primary-2);background:var(--sky-soft)}
+  .g-toc{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+  .g-toc a{
+    font-size:12.5px;font-weight:600;color:var(--primary);text-decoration:none;
+    border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:#fff;
+  }
+  .g-toc a:hover{border-color:var(--primary-2);background:var(--sky-soft)}
+  .g-sec h2{scroll-margin-top:20px}
+  .g-fig{
+    background:var(--sky-soft);border:1px solid #D5E8F7;border-radius:12px;
+    padding:16px;margin:14px 0;overflow-x:auto;
+  }
+  .g-fig svg{display:block;margin:0 auto;max-width:100%;height:auto}
+  .g-cap{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:8px}
+  .g-mock{
+    border:1px solid var(--line);border-radius:12px;background:#fff;
+    padding:14px;margin:12px 0;box-shadow:var(--shadow);overflow-x:auto;
+  }
+  .g-mock .m-label{font-size:11px;font-weight:700;color:#9AA7B0;letter-spacing:.4px;margin-bottom:10px}
+  .g-note{
+    display:flex;gap:10px;align-items:flex-start;border-radius:10px;padding:11px 14px;
+    font-size:13px;margin:10px 0;
+  }
+  .g-note.tip{background:var(--success-soft);color:#04543A}
+  .g-note.warn{background:#FFF4EE;color:#8A3A0B}
+  .g-note b{font-weight:800}
+  table.g-tbl{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+  .g-tbl th,.g-tbl td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  .g-tbl th{background:#F3F7FA;font-weight:700;white-space:nowrap}
+  .g-tbl td b{color:var(--primary)}
+  .g-kbd{
+    display:inline-block;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;
+    padding:0 7px;font-size:12px;font-weight:700;background:#F8F9F6;
+  }
+  .g-step-list{margin:8px 0 0 2px;padding-left:20px;font-size:13.5px}
+  .g-step-list li{margin:7px 0}
+  .g-badge-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:8px 0}
+  .g-badge-item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft)}
+  .g-cells{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+  .g-mock .rv-q{cursor:default}
+  .g-mini-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .g-csv{
+    font-family:Consolas,"Courier New",monospace;font-size:12.5px;background:#F3F7FA;
+    border:1px solid var(--line);border-radius:8px;padding:10px 14px;line-height:1.7;
+  }
+</style>
+</head>
+<body>
+
+<header style="padding:22px 0 26px;margin-bottom:22px">
+  <div class="wrap" style="padding-bottom:0">
+    <div class="brand">
+      <img class="brand-logo" style="height:64px" src="{{ url_for('static', filename='omr-lens-logo.png') }}" alt="OMR Lens">
+      <div class="brand-text">
+        <h1 class="brand-title">사용 안내<span class="bt-sub">OMR Lens — 모의고사 OMR 자동 채점</span></h1>
+        <p>스캔부터 통합성적표까지, 화면 순서 그대로 따라 하시면 됩니다.</p>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="g-top">
+    <a class="g-back" href="/">← 채점 화면으로 돌아가기</a>
+    <div class="g-toc">
+      <a href="#flow">전체 흐름</a>
+      <a href="#scan">스캔 준비</a>
+      <a href="#setup">시험 정보</a>
+      <a href="#upload">업로드</a>
+      <a href="#review">판독 검토·수정</a>
+      <a href="#grade">채점·다운로드</a>
+      <a href="#faq">문제 해결</a>
+    </div>
+  </div>
+
+  <!-- ── 전체 흐름 ─────────────────────────────────────────── -->
+  <section class="card g-sec" id="flow">
+    <div class="step-head"><div class="step-num">➊</div><h2>전체 흐름 한눈에 보기</h2></div>
+    <div class="g-fig">
+      <svg viewBox="0 0 860 150" width="860" role="img" aria-label="스캔부터 성적표까지 5단계 흐름도">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0L10 5L0 10z" fill="#3282B8"/>
+          </marker>
+        </defs>
+        <!-- 1 스캔 -->
+        <g transform="translate(10,25)">
+          <rect width="140" height="86" rx="12" fill="#fff" stroke="#3282B8" stroke-width="1.6"/>
+          <rect x="34" y="14" width="46" height="34" rx="3" fill="#E8F3FC" stroke="#3282B8"/>
+          <rect x="40" y="20" width="34" height="4" rx="2" fill="#3282B8"/>
+          <rect x="40" y="28" width="24" height="3" rx="1.5" fill="#9CC7E8"/>
+          <rect x="40" y="34" width="28" height="3" rx="1.5" fill="#9CC7E8"/>
+          <path d="M88 30h18" stroke="#05A66B" stroke-width="2.5" marker-end="url(#ar)"/>
+          <text x="70" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#0F4C75">① OMR 스캔</text>
+          <text x="70" y="82" text-anchor="middle" font-size="10" fill="#4A5A66">컬러 PDF, 과목별로</text>
+        </g>
+        <path d="M155 68h28" stroke="#3282B8" stroke-width="2" marker-end="url(#ar)"/>
+        <!-- 2 업로드 -->
+        <g transform="translate(188,25)">
+          <rect width="140" height="86" rx="12" fill="#fff" stroke="#3282B8" stroke-width="1.6"/>
+          <path d="M70 44V18M70 18l-10 11M70 18l10 11" stroke="#0F4C75" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M46 40v8a4 4 0 004 4h40a4 4 0 004-4v-8" stroke="#3282B8" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <text x="70" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#0F4C75">② 업로드</text>
+          <text x="70" y="82" text-anchor="middle" font-size="10" fill="#4A5A66">시험 선택 + PDF 첨부</text>
+        </g>
+        <path d="M333 68h28" stroke="#3282B8" stroke-width="2" marker-end="url(#ar)"/>
+        <!-- 3 자동 판독 -->
+        <g transform="translate(366,25)">
+          <rect width="140" height="86" rx="12" fill="#fff" stroke="#3282B8" stroke-width="1.6"/>
+          <circle cx="62" cy="30" r="13" fill="none" stroke="#0F4C75" stroke-width="3"/>
+          <path d="M72 40l10 10" stroke="#0F4C75" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="62" cy="30" r="5" fill="#05A66B"/>
+          <text x="70" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#0F4C75">③ 자동 판독</text>
+          <text x="70" y="82" text-anchor="middle" font-size="10" fill="#4A5A66">수험번호·성명·답안</text>
+        </g>
+        <path d="M511 68h28" stroke="#3282B8" stroke-width="2" marker-end="url(#ar)"/>
+        <!-- 4 검토 수정 -->
+        <g transform="translate(544,25)">
+          <rect width="140" height="86" rx="12" fill="#fff" stroke="#EF5F18" stroke-width="1.6"/>
+          <path d="M50 34l8 8 16-18" stroke="#05A66B" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M84 20l8 8-16 16h-8v-8z" fill="#FFE1CE" stroke="#EF5F18" stroke-width="1.6"/>
+          <text x="70" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#0F4C75">④ 검토·수정</text>
+          <text x="70" y="82" text-anchor="middle" font-size="10" fill="#4A5A66">카드 보기로 원본 대조</text>
+        </g>
+        <path d="M689 68h28" stroke="#3282B8" stroke-width="2" marker-end="url(#ar)"/>
+        <!-- 5 성적표 -->
+        <g transform="translate(722,25)">
+          <rect width="128" height="86" rx="12" fill="#E2F5EE" stroke="#05A66B" stroke-width="1.8"/>
+          <rect x="42" y="14" width="44" height="32" rx="4" fill="#fff" stroke="#05A66B" stroke-width="1.5"/>
+          <rect x="48" y="20" width="18" height="4" rx="2" fill="#05A66B"/>
+          <rect x="48" y="27" width="30" height="3" rx="1.5" fill="#8CE6C0"/>
+          <rect x="48" y="33" width="26" height="3" rx="1.5" fill="#8CE6C0"/>
+          <text x="64" y="70" text-anchor="middle" font-size="13" font-weight="800" fill="#04543A">⑤ 통합성적표</text>
+          <text x="64" y="82" text-anchor="middle" font-size="10" fill="#04543A">원점수·예상등급·정오표</text>
+        </g>
+      </svg>
+      <div class="g-cap">업로드 후에는 화면의 STEP 1 → 5 순서 그대로 진행됩니다. 판독(③)까지는 전부 자동입니다.</div>
+    </div>
+    <p style="font-size:13.5px;color:var(--ink-soft)">
+      OMR Lens는 스캔한 답안지 PDF에서 <b>수험번호·성명·선택과목·답안(수학 단답형 포함)</b>을 자동으로 읽어
+      채점하고, 반·번호 기준으로 과목을 합쳐 <b>통합성적표(엑셀)</b>를 만들어 줍니다.
+      선생님이 하실 일은 <b>스캔 → 업로드 → 확인 필요 학생만 검토 → 채점 버튼</b>이 전부입니다.
+    </p>
+  </section>
+
+  <!-- ── 스캔 준비 ─────────────────────────────────────────── -->
+  <section class="card g-sec" id="scan">
+    <div class="step-head"><div class="step-num">➋</div><h2>스캔 준비 — 이것만 지켜 주세요</h2></div>
+    <div class="g-fig">
+      <svg viewBox="0 0 760 170" width="760" role="img" aria-label="스캐너 권장 설정">
+        <!-- 스캐너 -->
+        <g transform="translate(20,30)">
+          <rect x="0" y="46" width="190" height="58" rx="10" fill="#fff" stroke="#0F4C75" stroke-width="2"/>
+          <rect x="14" y="30" width="162" height="24" rx="6" fill="#E8F3FC" stroke="#3282B8" stroke-width="1.5"/>
+          <rect x="30" y="8" width="130" height="30" rx="3" fill="#FDFDF2" stroke="#B9C4CC"/>
+          <circle cx="46" cy="18" r="4" fill="#CB3534" opacity=".75"/>
+          <circle cx="58" cy="18" r="4" fill="#05A66B" opacity=".75"/>
+          <circle cx="70" cy="18" r="4" fill="#3282B8" opacity=".75"/>
+          <rect x="86" y="14" width="60" height="3" rx="1.5" fill="#9AA7B0"/>
+          <rect x="86" y="21" width="44" height="3" rx="1.5" fill="#C6CFD6"/>
+          <rect x="150" y="76" width="28" height="10" rx="3" fill="#3282B8"/>
+          <text x="95" y="126" text-anchor="middle" font-size="11.5" fill="#4A5A66">답안지를 급지대에 같은 방향으로</text>
+        </g>
+        <!-- 설정 카드 3개 -->
+        <g transform="translate(250,26)" font-size="12.5">
+          <rect width="150" height="108" rx="10" fill="#fff" stroke="#05A66B" stroke-width="1.8"/>
+          <circle cx="30" cy="30" r="13" fill="#E2F5EE"/>
+          <path d="M23 30l5 5 9-10" stroke="#05A66B" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <text x="52" y="28" font-weight="800" fill="#04543A">컬러 스캔</text>
+          <text x="52" y="42" font-size="10.5" fill="#4A5A66">(필수)</text>
+          <text x="14" y="70" font-size="10.5" fill="#4A5A66">흑백·회색조로 스캔하면</text>
+          <text x="14" y="84" font-size="10.5" fill="#4A5A66">연필 마킹과 인쇄가 겹쳐</text>
+          <text x="14" y="98" font-size="10.5" fill="#4A5A66">판독 정확도가 떨어집니다</text>
+        </g>
+        <g transform="translate(420,26)" font-size="12.5">
+          <rect width="150" height="108" rx="10" fill="#fff" stroke="#3282B8" stroke-width="1.8"/>
+          <text x="30" y="36" font-weight="800" font-size="17" fill="#0F4C75">300</text>
+          <text x="68" y="36" font-size="11" fill="#4A5A66">dpi</text>
+          <text x="98" y="34" font-weight="800" fill="#0F4C75">해상도</text>
+          <text x="14" y="70" font-size="10.5" fill="#4A5A66">복합기 기본값이 대부분</text>
+          <text x="14" y="84" font-size="10.5" fill="#4A5A66">300dpi입니다. 200dpi 이하는</text>
+          <text x="14" y="98" font-size="10.5" fill="#4A5A66">권장하지 않습니다</text>
+        </g>
+        <g transform="translate(590,26)" font-size="12.5">
+          <rect width="150" height="108" rx="10" fill="#fff" stroke="#3282B8" stroke-width="1.8"/>
+          <rect x="18" y="18" width="24" height="30" rx="3" fill="#E8F3FC" stroke="#3282B8"/>
+          <text x="30" y="38" text-anchor="middle" font-size="10" font-weight="700" fill="#0F4C75">국어</text>
+          <rect x="48" y="18" width="24" height="30" rx="3" fill="#E8F3FC" stroke="#3282B8"/>
+          <text x="60" y="38" text-anchor="middle" font-size="10" font-weight="700" fill="#0F4C75">수학</text>
+          <text x="82" y="38" font-weight="800" fill="#0F4C75">과목별 PDF</text>
+          <text x="14" y="70" font-size="10.5" fill="#4A5A66">과목마다 따로 스캔해서</text>
+          <text x="14" y="84" font-size="10.5" fill="#4A5A66">과목별 파일로 저장하세요.</text>
+          <text x="14" y="98" font-size="10.5" fill="#4A5A66">한 과목 여러 파일도 OK</text>
+        </g>
+      </svg>
+      <div class="g-cap">권장 설정: <b>컬러 · 300dpi · 과목별 PDF</b>. 이 세 가지면 충분합니다.</div>
+    </div>
+    <table class="g-tbl">
+      <tr><th>항목</th><th>권장</th><th>이유</th></tr>
+      <tr><td><b>색상</b></td><td>컬러 (필수)</td><td>카드의 빨간 인쇄를 지우고 연필 마킹만 남기는 방식이라, 흑백 스캔은 정확도가 크게 떨어집니다. 흑백으로 올리면 화면에 <b>"컬러 재스캔 권장"</b> 표시가 뜹니다.</td></tr>
+      <tr><td><b>해상도</b></td><td>300dpi</td><td>복합기 기본값이면 대부분 그대로 사용 가능합니다.</td></tr>
+      <tr><td><b>파일</b></td><td>과목별 PDF</td><td>반이 섞여 있어도 되고, 순서도 상관없습니다. 스캐너가 나눠 저장한 여러 PDF를 한 과목에 모두 첨부해도 됩니다.</td></tr>
+      <tr><td><b>방향</b></td><td>자유</td><td>거꾸로·옆으로 스캔돼도 자동으로 돌려서 읽습니다. 살짝 비뚤어진 것도 자동 보정됩니다.</td></tr>
+    </table>
+    <div class="g-note tip">💡 <span><b>백지(결시) 카드가 섞여 있어도 괜찮습니다.</b> 아무것도 마킹되지 않은 카드는 자동으로 명단에서 제외됩니다.</span></div>
+  </section>
+
+  <!-- ── 시험 정보 ─────────────────────────────────────────── -->
+  <section class="card g-sec" id="setup">
+    <div class="step-head"><div class="step-num">1</div><h2>STEP 1 — 시험 정보 선택</h2></div>
+    <ol class="g-step-list">
+      <li><b>학년</b>(고1·고2·고3)을 먼저 누르세요. 학년에 맞는 시험 목록과 과목 카드가 나타납니다.</li>
+      <li><b>시험</b>을 고르세요. 시험 종류(학력평가·모의평가)에 맞는 답안지 양식이 자동으로 선택되고, 선택창 아래에 어떤 카드 양식으로 읽는지 표시됩니다.</li>
+      <li>목록에 원하는 시험이 없으면 아래의 <b>"EBSi에서 정답 가져오기"</b>로 연도·월을 골라 정답을 자동 등록할 수 있습니다.</li>
+      <li><b>성명 명단 CSV</b>(선택)를 첨부하면 판독한 성명과 명단을 대조해서, 다르게 읽힌 학생에게 자동으로 표시를 달아 줍니다. 없으면 카드에 마킹된 성명을 그대로 사용합니다.</li>
+    </ol>
+    <div class="g-mock">
+      <div class="m-label">성명 명단 CSV 형식 예시 (첫 줄 제목 포함, 엑셀에서 "CSV로 저장")</div>
+      <div class="g-csv">반,번호,성명<br>1,1,김하늘<br>1,2,이도윤<br>1,3,박서준</div>
+    </div>
+  </section>
+
+  <!-- ── 업로드 ───────────────────────────────────────────── -->
+  <section class="card g-sec" id="upload">
+    <div class="step-head"><div class="step-num">2</div><h2>STEP 2 — 답안지 업로드</h2></div>
+    <p style="font-size:13.5px;color:var(--ink-soft)">
+      과목 카드를 <b>클릭</b>해서 PDF를 고르거나, 파일을 카드 위로 <b>끌어다 놓으세요</b>.
+      한 과목에 여러 PDF를 첨부할 수 있고(자동으로 합쳐서 판독), 파일 오른쪽 ✕ 로 뺄 수 있습니다.
+      올리고 싶은 과목만 올리면 됩니다 — 전 과목이 아니어도 채점됩니다.
+    </p>
+    <div class="g-note warn">⚠️ <span><b>과목 카드와 실제 PDF 과목이 맞는지</b> 한 번만 확인해 주세요. 수학 답안지를 국어 카드에 올리면 판독 결과가 온통 "확인 필요"로 표시됩니다.</span></div>
+    <p style="font-size:13.5px;color:var(--ink-soft);margin-top:6px">
+      준비가 끝나면 <b>[답안지 스캔 시작]</b>을 누르세요. 과목별 진행률이 실시간으로 표시되고,
+      끝난 과목부터 바로 검토할 수 있습니다.
+    </p>
+  </section>
+
+  <!-- ── 판독 검토·수정 ────────────────────────────────────── -->
+  <section class="card g-sec" id="review">
+    <div class="step-head"><div class="step-num">3</div><h2>STEP 3 — 판독 결과 검토·수정</h2></div>
+
+    <h3 style="font-size:14.5px;margin:6px 0 4px">① 판독 상태 읽는 법</h3>
+    <p style="font-size:13.5px;color:var(--ink-soft)">학생 목록의 "판독 상태" 칸을 보면 어디를 확인해야 하는지 알 수 있습니다.</p>
+    <div class="g-mock">
+      <div class="m-label">화면 예시 — 판독 상태 표시</div>
+      <div class="g-badge-row">
+        <div class="g-badge-item"><span class="rv-status ok">정상</span> 전 문항이 깨끗하게 판독됨 — 확인 불필요</div>
+      </div>
+      <div class="g-badge-row">
+        <div class="g-badge-item"><span class="rv-status warn">미마킹 2 · 중복 1</span> 빈 문항·이중 마킹이 있음 — 답안을 열어 실제로 안 푼 것인지 확인</div>
+      </div>
+      <div class="g-badge-row">
+        <div class="g-badge-item"><span class="rv-flag-badge">⚠ 수험번호불완전</span> 자동 판독이 확신하지 못한 학생 — <b>카드 보기로 원본을 대조해 직접 수정</b></div>
+      </div>
+    </div>
+
+    <h3 style="font-size:14.5px;margin:16px 0 4px">② 카드 보기 — 스캔 원본과 대조</h3>
+    <p style="font-size:13.5px;color:var(--ink-soft)">
+      모든 학생 행에 <button class="rv-card quiet" type="button" style="cursor:default">🔍 카드 보기</button> 버튼이 있습니다.
+      누르면 그 학생의 <b>실제 답안지 스캔 이미지</b>가 뜨고, 이미지를 클릭하면 확대됩니다.
+      원본을 보면서 바로 옆의 반·번호·성명 칸을 고치면 됩니다. ⚠ 표시가 있는 학생은 버튼이
+      <button class="rv-card" type="button" style="cursor:default">🔍 카드 보기</button> 처럼 강조되어 있으니 이 학생들부터 확인하세요.
+    </p>
+
+    <h3 style="font-size:14.5px;margin:16px 0 4px">③ 답안 보기·수정</h3>
+    <p style="font-size:13.5px;color:var(--ink-soft)">
+      <b>[답안 보기·수정]</b>을 누르면 문항별 그리드가 펼쳐집니다. 색으로 정오가 표시되고,
+      셀을 누르면 바로 고칠 수 있습니다. 수정하면 즉시 재채점됩니다.
+    </p>
+    <div class="g-mock">
+      <div class="m-label">화면 예시 — 답안 그리드 (큰 숫자 = 학생 답, 작은 숫자 = 정답)</div>
+      <div class="g-cells">
+        <div class="rv-q ok"><span class="qn">1</span><span class="qa" style="color:var(--success)">5</span><span class="qc"></span></div>
+        <div class="rv-q wrong"><span class="qn">2</span><span class="qa" style="color:var(--danger)">3</span><span class="qc" style="color:var(--danger)">2</span></div>
+        <div class="rv-q blank"><span class="qn">3</span><span class="qa" style="color:#9AA7B0">·</span><span class="qc">4</span></div>
+        <div class="rv-q ok"><span class="qn">21</span><span class="qa" style="color:var(--success)">270</span><span class="qc"></span></div>
+        <div class="rv-q wrong"><span class="qn">22</span><span class="qa" style="color:var(--danger)">11</span><span class="qc" style="color:var(--danger)">43</span></div>
+      </div>
+      <div class="g-badge-row" style="margin-top:6px">
+        <div class="g-badge-item"><i class="rv-swatch" style="background:var(--success-soft);border:1px solid #B6E6D4"></i>정답</div>
+        <div class="g-badge-item"><i class="rv-swatch" style="background:var(--danger-soft);border:1px solid #F2C5C4"></i>오답</div>
+        <div class="g-badge-item"><i class="rv-swatch" style="background:#F1F4F6"></i>미마킹</div>
+      </div>
+    </div>
+    <ul class="g-step-list">
+      <li><b>객관식</b> 문항은 셀을 누르면 ①~⑤ 선택 목록이 나옵니다.</li>
+      <li><b>수학 단답형(16~22·29~30번)</b>은 셀을 누르면 입력칸이 나타나 <b>0~999를 직접 입력</b>합니다.
+        <span class="g-kbd">Enter</span> 저장 · <span class="g-kbd">Esc</span> 취소 · 빈칸으로 저장하면 미마킹 처리.</li>
+      <li>반·번호·성명은 목록의 칸을 눌러 언제든 바로 고칠 수 있습니다.</li>
+    </ul>
+  </section>
+
+  <!-- ── 채점·다운로드 ─────────────────────────────────────── -->
+  <section class="card g-sec" id="grade">
+    <div class="step-head"><div class="step-num" style="background:var(--success)">4·5</div><h2>STEP 4·5 — 채점과 통합성적표</h2></div>
+    <p style="font-size:13.5px;color:var(--ink-soft)">
+      검토를 마쳤으면 <b>[채점하기]</b>를 누르세요. 반·번호 기준으로 과목이 합쳐지고
+      과목별 평균·분포 요약과 함께 다운로드 파일이 만들어집니다.
+      채점 후에도 답안을 수정하면 결과에 다시 반영됩니다.
+    </p>
+    <table class="g-tbl">
+      <tr><th>파일</th><th>내용</th></tr>
+      <tr><td><b>통합성적표.xlsx</b></td><td>반·번호·성명별 전 과목 원점수와 예상 등급, 대교협·UNIV 양식 시트, 예상등급컷 근거 시트</td></tr>
+      <tr><td><b>과목별 점수표</b></td><td>과목별 문항 답안·틀린문항·미마킹·중복마킹 상세</td></tr>
+      <tr><td><b>정오표</b></td><td>학생별 문항 정오를 한 장으로 — 배부용</td></tr>
+    </table>
+    <div class="g-note warn">⚠️ <span>표준점수·백분위·등급은 EBSi 예상 등급컷 기반 <b>추정치</b>이며 공식 성적표를 대체하지 않습니다. 고3 국어·수학은 원점수 컷이 공개되지 않아 예상치가 제공되지 않습니다.</span></div>
+    <div class="g-note tip">🔒 <span>업로드한 답안지 PDF는 <b>채점 직후 서버에서 삭제</b>되고, 결과 파일도 통합성적표를 내려받는 즉시(또는 일정 시간 후 자동으로) 완전히 삭제됩니다.</span></div>
+  </section>
+
+  <!-- ── 문제 해결 ─────────────────────────────────────────── -->
+  <section class="card g-sec" id="faq">
+    <div class="step-head"><div class="step-num">?</div><h2>이런 표시가 뜨면 — 문제 해결</h2></div>
+    <table class="g-tbl">
+      <tr><th>표시</th><th>뜻</th><th>대처</th></tr>
+      <tr><td><b>⚠ 정렬실패</b></td><td>페이지가 접히거나 겹쳐 스캔되는 등 카드 위치를 잡지 못함</td><td><b>카드 보기</b>로 원본을 확인하세요. 카드가 훼손됐으면 그 장만 다시 스캔해 올리면 됩니다(기존 파일에 추가 첨부 가능).</td></tr>
+      <tr><td><b>⚠ 수험번호불완전</b></td><td>수험번호 마킹이 비었거나 흐림</td><td>카드 보기로 원본을 대조해 반·번호 칸에 직접 입력하세요.</td></tr>
+      <tr><td><b>⚠ 성명판독불가 / 성명대조불일치</b></td><td>성명 마킹이 불완전하거나 명단 CSV와 다름</td><td>카드 보기로 확인 후 성명 칸을 고치세요.</td></tr>
+      <tr><td><b>⚠ 흑백 스캔 감지</b></td><td>컬러가 아닌 스캔 — 판독 신뢰도 낮음</td><td>스캐너를 컬러로 바꿔 다시 스캔해 올리는 것을 권장합니다.</td></tr>
+      <tr><td><b>미마킹 다수</b></td><td>실제로 안 풀었거나, 마킹이 매우 연함</td><td>답안 그리드를 열어 카드 보기와 대조 — 연한 마킹이면 해당 문항만 직접 입력하세요.</td></tr>
+      <tr><td><b>답안 그리드가 비어 보임</b></td><td>그 시험의 정답이 아직 등록되지 않음</td><td>STEP 1에서 "EBSi에서 정답 가져오기"로 정답을 등록한 뒤 다시 채점하세요.</td></tr>
+    </table>
+    <p style="font-size:13px;color:var(--ink-soft);margin-top:8px">
+      해결되지 않는 문제는 <a href="mailto:ming0987@naver.com">ming0987@naver.com</a> 으로 화면과 함께 알려주세요.
+    </p>
+  </section>
+
+  <div style="text-align:center;margin-top:22px">
+    <a class="g-back" href="/">← 채점 화면으로 돌아가기</a>
+  </div>
+
+  <footer>
+    <b>OMR Lens</b> · 모의고사 OMR 스캔·채점
+    <div class="credit">제작 · 산남고등학교 이성훈 · <a href="mailto:ming0987@naver.com">ming0987@naver.com</a></div>
+  </footer>
+</div>
+
+</body>
+</html>

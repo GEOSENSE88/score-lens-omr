@@ -726,6 +726,12 @@ def index():
                            static_v=_static_version())
 
 
+@app.get("/guide")
+def guide():
+    """사용 안내 — 스캔 준비부터 통합성적표까지 단계별 설명서."""
+    return render_template("guide.html", static_v=_static_version())
+
+
 @app.get("/api/exams")
 def api_exams():
     return jsonify(ok=True, exams=er.list_exams(ROOT / "keys"))
