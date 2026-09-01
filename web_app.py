@@ -307,26 +307,34 @@ SUBJECTS_BY_GRADE: dict[int, list[dict]] = {
              id_layout=None, csv_kind="explore", csv_suffix="_탐구_판독표.csv"),
     ],
 }
-# 고1·2 공통 카탈로그 (run_objective 기반; 템플릿은 첫 스캔 보정 후 생성됨)
+# 고1·2 공통 카탈로그 — run_hp 파이프라인(--card g12).
+# 2026-09 고2 백지 서식 실측 보정(work/g12_sep/calibrate_g12.py):
+# 수험번호 9열(학교4+학년1+반2+번호2)·성명 자모그리드·수학 단답 22~30.
 _G12 = [
-    dict(key="korean", label="국어", icon="가", script="run_objective.py",
-         subject_arg="국어", names=True, template="templates/korean_g12.json",
-         id_layout="g12", csv_kind="korean_obj", csv_suffix="_국어_판독표.csv"),
-    dict(key="math", label="수학", icon="∑", script="run_objective.py",
-         subject_arg="수학", names=True, template="templates/math_g12.json",
-         id_layout="g12", csv_kind="math", csv_suffix="_수학_판독표.csv"),
-    dict(key="english", label="영어", icon="A", script="run_objective.py",
-         subject_arg="영어", names=True, template="templates/english_g12.json",
-         id_layout="g12", csv_kind="english", csv_suffix="_영어_판독표.csv"),
-    dict(key="history", label="한국사", icon="史", script="run_objective.py",
-         subject_arg="한국사", names=True, template="templates/history_g12.json",
-         id_layout="g12", csv_kind="history", csv_suffix="_한국사_판독표.csv"),
-    dict(key="social", label="통합사회", icon="社", script="run_objective.py",
-         subject_arg="통합사회", names=True, template="templates/social_g12.json",
-         id_layout="g12", csv_kind="social", csv_suffix="_통합사회_판독표.csv"),
-    dict(key="science", label="통합과학", icon="科", script="run_objective.py",
-         subject_arg="통합과학", names=True, template="templates/science_g12.json",
-         id_layout="g12", csv_kind="science", csv_suffix="_통합과학_판독표.csv"),
+    dict(key="korean", label="국어", icon="가", script="run_hp.py",
+         subject_arg="국어", card="g12", names=True,
+         template="templates/korean_g12hp.json", id_layout=None,
+         csv_kind="korean", csv_suffix="_국어_판독표.csv"),
+    dict(key="math", label="수학", icon="∑", script="run_hp.py",
+         subject_arg="수학", card="g12", names=True,
+         template="templates/math_g12hp.json", id_layout=None,
+         csv_kind="math", csv_suffix="_수학_판독표.csv"),
+    dict(key="english", label="영어", icon="A", script="run_hp.py",
+         subject_arg="영어", card="g12", names=True,
+         template="templates/english_g12hp.json", id_layout=None,
+         csv_kind="english", csv_suffix="_영어_판독표.csv"),
+    dict(key="history", label="한국사", icon="史", script="run_hp.py",
+         subject_arg="한국사", card="g12", names=True,
+         template="templates/history_g12hp.json", id_layout=None,
+         csv_kind="history", csv_suffix="_한국사_판독표.csv"),
+    dict(key="social", label="통합사회", icon="社", script="run_hp.py",
+         subject_arg="통합사회", card="g12", names=True,
+         template="templates/social_g12hp.json", id_layout=None,
+         csv_kind="social", csv_suffix="_통합사회_판독표.csv"),
+    dict(key="science", label="통합과학", icon="科", script="run_hp.py",
+         subject_arg="통합과학", card="g12", names=True,
+         template="templates/science_g12hp.json", id_layout=None,
+         csv_kind="science", csv_suffix="_통합과학_판독표.csv"),
 ]
 SUBJECTS_BY_GRADE[1] = _G12
 SUBJECTS_BY_GRADE[2] = _G12

@@ -111,9 +111,11 @@ def calibrate_extras(spec: dict, pages, blob_fn=None) -> dict:
             name=name, ncols=g["ncols"], nrows=g["nrows"],
             xs=_union_vote(st["cols"], g["ncols"], npages, f"그리드 {name} 열",
                            g["x_lo"], g["x_hi"],
-                           # id(10열 학평): 학년열(6번째) 희박 / sa: 백의자리 희박
+                           # id(10열 학평): 학년열(6번째) 희박 / id(9열 고1·2):
+                           # 학년열(5번째) 희박 / sa: 백의자리 희박
                            # (충북 5열 id 는 전 열이 균등 마킹이라 규칙 불필요)
-                           sparse_idx=5 if (name == "id" and g["ncols"] >= 10)
+                           sparse_idx=(5 if g["ncols"] >= 10 else 4)
+                           if (name == "id" and g["ncols"] >= 9)
                            else (0 if name.startswith("sa") else None),
                            pitch_hint=g.get("pitch_x")),
             ys=_union_vote(st["rows"], g["nrows"], npages, f"그리드 {name} 행",
@@ -171,6 +173,7 @@ def read_id(gray: np.ndarray, grid: dict) -> dict:
 
     열 수로 카드 양식을 판별한다:
     - 10열 = 학평(인천 등): 학교5 + 학년1 + 반2 + 번호2
+    -  9열 = 고1·2 학평: 학교4(첫 자리 인쇄 고정) + 학년1 + 반2 + 번호2
     -  5열 = 충북 모의평가: 학년1 + 반2 + 번호2 (학교번호 없음)"""
     d = read_digit_grid(gray, grid)
     def join(part):
@@ -178,6 +181,9 @@ def read_id(gray: np.ndarray, grid: dict) -> dict:
     if len(d) >= 10:
         return dict(school=join(d[0:5]), grade=join(d[5:6]),
                     ban=join(d[6:8]), num=join(d[8:10]), raw=d)
+    if len(d) == 9:
+        return dict(school=join(d[0:4]), grade=join(d[4:5]),
+                    ban=join(d[5:7]), num=join(d[7:9]), raw=d)
     if len(d) == 5:
         return dict(school=None, grade=join(d[0:1]),
                     ban=join(d[1:3]), num=join(d[3:5]), raw=d)

@@ -44,6 +44,18 @@ SUBJ_SETUP_CB = {
     "수학": (["math_g3cb"], "math", "_수학_점수표.csv"),
     "영어": (["english_g3cb"], "english", "_영어_판독표.csv"),
 }
+# 고1·2 전국연합 학평 카드(--card g12) — 2026-09 고2 백지 서식 실측 보정.
+# 수험번호 9열(학교4+학년1+반2+번호2), 국어·수학은 선택과목 없음(공통),
+# 수학 단답형은 22~30. CSV 는 판독표 포맷('점수' 컬럼) — consolidate 의
+# 고1·2 자동 감지(parse_pandokpyo)와 정합.
+SUBJ_SETUP_G12 = {
+    "국어": (["korean_g12hp"], "korean_g12", "_국어_판독표.csv"),
+    "수학": (["math_g12hp"], "math_g12", "_수학_판독표.csv"),
+    "영어": (["english_g12hp"], "english", "_영어_판독표.csv"),
+    "한국사": (["history_g12hp"], "history", "_한국사_판독표.csv"),
+    "통합사회": (["social_g12hp"], "social", "_통합사회_판독표.csv"),
+    "통합과학": (["science_g12hp"], "science", "_통합과학_판독표.csv"),
+}
 
 # ── 페이지 워커 (Windows spawn 안전: 모듈 전역 + initializer) ─────
 _W: dict = {}
@@ -128,6 +140,11 @@ def load_keys_tolerant(keys_dir: Path, exam: str) -> dict:
     k: dict = {}
     k["history"] = _try(keys_dir / f"{exam}_한국사_xip_api.json")
     k["english"] = _try(keys_dir / f"{exam}_영어_xip_api.json")
+    # 고1·2: 국어·수학도 선택과목 없는 단일 키(answers/points, 수학 단답 22~30 포함)
+    k["korean_g12"] = _try(keys_dir / f"{exam}_국어_xip_api.json")
+    k["math_g12"] = _try(keys_dir / f"{exam}_수학_xip_api.json")
+    k["social"] = _try(keys_dir / f"{exam}_통합사회_xip_api.json")
+    k["science"] = _try(keys_dir / f"{exam}_통합과학_xip_api.json")
     k["korean"] = {el: v for el in ("화법과작문", "언어와매체")
                    if (v := _try(keys_dir / f"{exam}_국어_{el}.json"))}
     k["math"] = {el: v for el in ("확률과통계", "미적분", "기하")
@@ -184,7 +201,7 @@ def _flags(rec: dict, ident: dict) -> list[str]:
         fl.append(rec["error"])
     if rec.get("gray_scan"):
         fl.append("흑백스캔(컬러 재스캔 권장)")
-    if sid.get("school") not in (None, 19718):
+    if sid.get("school") not in (None, 19718, 9718):   # 9718 = 고1·2 카드(4열, 첫자리 인쇄)
         fl.append(f"학교번호이상:{sid.get('school')}")
     if not ident["반"] or not ident["번호"]:
         fl.append("수험번호불완전")
@@ -208,6 +225,12 @@ def rows_for(kind: str, recs: list[dict], keys: dict, names: dict) -> list[dict]
                 and (kind != "explore" or hp_run.is_blank(rec.get("ans2", {0: 0}))):
             continue                       # 백지(결시) 카드 — 명부에서 제외
         fl = _flags(rec, ident) + name_flags
+        # 과목·카드 바꿔치기 안전망: 수험번호는 읽혔는데 답란이 대부분 비면
+        # 다른 과목 카드를 올렸을 가능성이 크다 (백지 결시는 위에서 이미 제외).
+        if kind != "explore" and main:
+            blank_ratio = sum(1 for v in main.values() if v == 0) / len(main)
+            if blank_ratio >= 0.6:
+                fl.append("미마킹과다(과목·양식 확인)")
         row = dict(ident)
         row["페이지"] = rec["page"] + 1
         if kind == "history":
@@ -222,6 +245,29 @@ def rows_for(kind: str, recs: list[dict], keys: dict, names: dict) -> list[dict]
             if keys["english"]:               # 정답키 미등록 — 판독표만
                 row.update(점수=hp_run.score_simple(rec["ans"], keys["english"]),
                            만점=100)
+            else:
+                row.update(점수="", 만점="")
+        elif kind in ("korean_g12", "social", "science"):
+            # 고1·2 객관식 단일 키 과목 — 판독표 포맷(점수/만점 + 문항별 답)
+            row.update({str(q): _ans_str(a) for q, a in rec["ans"].items()})
+            key = keys[kind]
+            if key:
+                row.update(점수=hp_run.score_simple(rec["ans"], key),
+                           만점=key.get("max_score") or (100 if kind == "korean_g12" else 50))
+            else:
+                row.update(점수="", 만점="")
+        elif kind == "math_g12":
+            # 고1·2 수학: 객관식 1~21 + 단답형 22~30 (단일 키, answers 에 단답 정답 수)
+            allans = dict(rec["ans"])
+            allans.update(rec["sa"])
+            for q in range(1, 31):
+                row[str(q)] = _ans_str(allans.get(q))
+            if any(v == -1 for v in rec["sa"].values()):
+                fl.append("단답중복")
+            key = keys["math_g12"]
+            if key:
+                scored = {q: (0 if a in (None, -1) else a) for q, a in allans.items()}
+                row.update(점수=hp_run.score_simple(scored, key), 만점=100)
             else:
                 row.update(점수="", 만점="")
         elif kind == "korean":
@@ -342,9 +388,10 @@ def _write_meta(out_dir: Path, tnames: list[str]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("pdf", type=Path)
-    ap.add_argument("--subject", required=True, choices=list(SUBJ_SETUP))
-    ap.add_argument("--card", default="hp", choices=("hp", "cb"),
-                    help="카드 양식: hp=전국연합 학평 / cb=충북교육청 모의평가")
+    ap.add_argument("--subject", required=True,
+                    choices=sorted({*SUBJ_SETUP, *SUBJ_SETUP_G12}))
+    ap.add_argument("--card", default="hp", choices=("hp", "cb", "g12"),
+                    help="카드 양식: hp=고3 학평 / cb=충북 모의평가 / g12=고1·2 학평")
     ap.add_argument("--keys-dir", type=Path, default=HERE / "keys")
     ap.add_argument("--irecord", default=None)
     ap.add_argument("--out", type=Path, required=True)
@@ -357,16 +404,16 @@ def main() -> int:
                     default=int(os.environ.get("OMR_WORKERS", "0")) or auto)
     a = ap.parse_args()
 
-    setup = SUBJ_SETUP_CB if a.card == "cb" else SUBJ_SETUP
+    setup = {"cb": SUBJ_SETUP_CB, "g12": SUBJ_SETUP_G12}.get(a.card, SUBJ_SETUP)
     if a.subject not in setup:
-        print(f"[오류] {a.subject}: 충북 카드가 아직 보정되지 않았습니다 "
-              "(카드 스캔 확보 후 work/hp_cb/calibrate_cb.py 로 보정)", flush=True)
+        print(f"[오류] {a.subject}: 이 카드 양식({a.card})은 해당 과목이 아직 "
+              "보정되지 않았습니다", flush=True)
         return 1
     tnames, kind, suffix = setup[a.subject]
     if not a.irecord:
         print("경고: --irecord 미지정 — 정답키 매칭이 모호할 수 있습니다.", flush=True)
     keys = load_keys_tolerant(a.keys_dir, a.irecord or "")
-    if kind == "korean" and not keys["korean"]:
+    if not keys.get(kind):
         print("정답키 없음 — 채점 없이 판독표만 생성합니다 (키 등록 후 재실행 시 채점).",
               flush=True)
     names = _load_names(a.names)

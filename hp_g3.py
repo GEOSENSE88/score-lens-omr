@@ -206,21 +206,26 @@ def _id_readback_pick(img: np.ndarray, tmpl: dict, pitch: float,
                       cands: list[int]) -> int | None:
     """후보 시프트들로 수험번호를 읽어 검증 기준을 만족하는 '유일한' 후보 반환.
 
-    - 학평(10열): 학교코드 == SCHOOL_CODE
+    - 학평 고3(10열): 학교코드 == SCHOOL_CODE
+    - 학평 고1·2(9열, 학교 4자리): 학교 뒷자리 == SCHOOL_CODE 뒷 4자리
     - 충북(5열, 학교번호 없음): 학년==3 이고 반·번호가 완전 판독"""
     idg = next((g for g in tmpl.get("grids", []) if g["name"] == "id"), None)
     if idg is None or not cands:
         return None
     import hp_id
     gray = pencil_gray(img)
-    has_school = len(idg["xs"]) >= 10
+    ncols = len(idg["xs"])
     hits = []
     for k in cands:
         xs = [x + k * pitch for x in idg["xs"]]
         rid = hp_id.read_id(gray, dict(idg, xs=xs))
-        ok = (rid.get("school") == SCHOOL_CODE) if has_school else \
-             (rid.get("grade") == 3 and rid.get("ban") is not None
-              and rid.get("num") is not None)
+        if ncols >= 10:
+            ok = rid.get("school") == SCHOOL_CODE
+        elif ncols == 9:
+            ok = rid.get("school") == SCHOOL_CODE % 10000
+        else:
+            ok = (rid.get("grade") == 3 and rid.get("ban") is not None
+                  and rid.get("num") is not None)
         if ok:
             hits.append(k)
     return hits[0] if len(hits) == 1 else None

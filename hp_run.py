@@ -65,14 +65,16 @@ def load_keys(keys_dir: Path, exam: str) -> dict:
     return k
 
 
-def score_simple(ans: dict[int, int], key: dict) -> int:
+def score_simple(ans: dict[int, int], key: dict):
+    """answers/points 키로 단순 채점. 고1·2 통합과목은 1.5점 등 소수 배점이
+    있어 float 로 합산한다(정수 합은 int 로 반환 — 기존 경로 표기 불변)."""
     answers, points = key["answers"], key["points"]
-    sc = 0
+    sc = 0.0
     for q, a in ans.items():
         qs = str(q)
         if qs in answers and a == int(answers[qs]):
-            sc += int(points[qs])
-    return sc
+            sc += float(points[qs])
+    return int(sc) if sc.is_integer() else round(sc, 1)
 
 
 def abs_grade(score: int, cuts: list[int]) -> int:
@@ -114,11 +116,15 @@ def read_page(kind: str, tmpls: list[dict], img: np.ndarray) -> dict:
     ng = grid_of(tmpls[0], "name")
     if ng:
         rec["name"] = hp_id.read_name(gray, ng)   # {name, ok, issues}
-    if kind == "korean":
-        rec["choice"] = hp_id.read_select(gray, sel_of(tmpls[0], "choice"))
+    if kind in ("korean", "korean_g12"):
+        sel = sel_of(tmpls[0], "choice")
+        if sel is not None:                       # 고1·2 국어는 공통(선택 없음)
+            rec["choice"] = hp_id.read_select(gray, sel)
         rec["ans"] = hp_g3.read_objective(img, tmpls[0], gray=gray)
-    elif kind == "math":
-        rec["choice"] = hp_id.read_select(gray, sel_of(tmpls[0], "choice"))
+    elif kind in ("math", "math_g12"):
+        sel = sel_of(tmpls[0], "choice")
+        if sel is not None:                       # 고1·2 수학은 공통(선택 없음)
+            rec["choice"] = hp_id.read_select(gray, sel)
         rec["ans"] = hp_g3.read_objective(img, tmpls[0], gray=gray)
         rec["sa"] = {int(g["name"][2:]): hp_id.read_short_answer(gray, g)
                      for g in tmpls[0]["grids"] if g["name"].startswith("sa")}

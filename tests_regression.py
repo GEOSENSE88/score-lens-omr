@@ -127,20 +127,38 @@ def t4_consolidate_g3():
 
 # ── 5. 고1 가상카드 6과목 (CLI) ──────────────────────────────────
 def t5_synth_g12():
-    print("[5] 고1 가상카드 6과목 채점 (36건 대조)")
-    from synth_omr import make_students, render_pdfs
+    print("[5] 고1·2 실물서식 합성카드 6과목 채점 (36건 대조, run_hp --card g12)")
+    # 픽스처: 2026-09 고2 백지 서식에 6명(3반 1~6번) 스탬프 —
+    # work/g12_sep/make_synth_g12.py 로 생성. 마킹 규칙:
+    # 객관식 (q+st)%5+1, 수학 단답 (q*7+st*13)%1000 (st=번호-1).
+    import json as _json
     synth_dir = ROOT / "work/synth_g12"
     if not (synth_dir / "synth_국어.pdf").exists():
-        render_pdfs(synth_dir)
-    students = make_students(ROOT / "keys", "202606041", n=6, grade=1)
-    exp = {(info["beon"], s): sc for info, _, e in students for s, sc in e.items()}
-    templates = dict(국어="korean_g12", 수학="math_g12", 영어="english_g12",
-                     한국사="history_g12", 통합사회="social_g12", 통합과학="science_g12")
+        check("synth_g12 픽스처 존재", False,
+              "python work/g12_sep/make_synth_g12.py 로 생성 필요")
+        return
+
+    def key_of(subj):
+        k = _json.loads((ROOT / f"keys/202606041_{subj}_xip_api.json")
+                        .read_text(encoding="utf-8"))
+        return ({int(q): int(v) for q, v in k["answers"].items()},
+                {int(q): float(v) for q, v in k["points"].items()})
+
+    def expected(subj, st):
+        ans, pts = key_of(subj)
+        sc = 0.0
+        for q in ans:
+            got = ((q * 7 + st * 13) % 1000 if subj == "수학" and q >= 22
+                   else (q + st) % 5 + 1)
+            if got == ans[q]:
+                sc += pts[q]
+        return round(sc, 1)
+
     total = ok = 0
-    for subj, tp in templates.items():
-        p = run_cli(["run_objective.py", str(synth_dir / f"synth_{subj}.pdf"),
-                     "--subject", subj, "--template", f"templates/{tp}.json",
-                     "--irecord", "202606041", "--id-layout", "g12",
+    for subj in ("국어", "수학", "영어", "한국사", "통합사회", "통합과학"):
+        p = run_cli(["run_hp.py", str(synth_dir / f"synth_{subj}.pdf"),
+                     "--subject", subj, "--card", "g12",
+                     "--irecord", "202606041",
                      "--names", str(synth_dir / "synth_names.csv"),
                      "--out", "output/_회귀_synth"])
         if p.returncode != 0:
@@ -149,7 +167,7 @@ def t5_synth_g12():
         with open(ROOT / f"output/_회귀_synth/synth_{subj}_{subj}_판독표.csv", encoding="utf-8-sig") as f:
             for r in csv.DictReader(f):
                 total += 1
-                if float(r["점수"]) == float(exp[(r["번호"], subj)]):
+                if float(r["점수"]) == expected(subj, int(r["번호"]) - 1):
                     ok += 1
     check(f"점수 대조 {ok}/{total}", total == 36 and ok == 36)
 
@@ -211,14 +229,17 @@ def t65_simfixes():
                if ws.cell(r, 6).value not in (None, "") and ws.cell(r, 10).value not in (None, ""))
     check("성명 혼재 분열 없음", n == 6 and both == 6)
 
-    # c) 과목 바꿔치기 → 평균저점 경고
-    p = run_cli(["run_objective.py", str(ROOT / "work/synth_g12/synth_영어.pdf"),
-                 "--subject", "국어", "--template", "templates/korean_g12.json",
-                 "--irecord", "202606041", "--id-layout", "g12",
+    # c) 과목 바꿔치기 → 무경고 통과 금지 (run_hp: 영어 카드를 수학으로 읽으면
+    #    카드별 마크 배치가 달라 정렬실패로, 좌표가 비슷하면 미마킹과다로 드러난다)
+    p = run_cli(["run_hp.py", str(ROOT / "work/synth_g12/synth_영어.pdf"),
+                 "--subject", "수학", "--card", "g12",
+                 "--irecord", "202606041",
                  "--out", "output/_회귀_simfix_swap"])
-    rows = list(_csv.DictReader(open(ROOT / "output/_회귀_simfix_swap/synth_영어_국어_판독표.csv",
+    rows = list(_csv.DictReader(open(ROOT / "output/_회귀_simfix_swap/synth_영어_수학_판독표.csv",
                                      encoding="utf-8-sig")))
-    check("바꿔치기 평균저점 경고", all("평균저점" in r["확인필요"] for r in rows))
+    check("바꿔치기 전 행 경고(정렬실패/미마킹과다)",
+          bool(rows) and all(("정렬실패" in r["확인필요"]) or ("미마킹과다" in r["확인필요"])
+                             for r in rows))
 
     # d) 수험번호 앵커 보정 (y+40px)
     import cv2
@@ -371,7 +392,9 @@ def t9_grade_cuts():
         for subj, c0 in colmap.items():
             est = gc.estimate(gc.find_subject_cut(cuts1, subj), ws.cell(r, c0).value)
             got = (ws.cell(r, c0 + 1).value, ws.cell(r, c0 + 2).value, ws.cell(r, c0 + 3).value)
-            want = (est["표준점수"] or None, est["백분위"] or None, est["등급"] or None)
+            # 백분위 0 은 정당한 값 — `or None` 은 0 을 지우므로 '' 만 None 취급
+            want = tuple(None if v == "" else v
+                         for v in (est["표준점수"], est["백분위"], est["등급"]))
             total += 1
             ok += got == want
     check(f"UNIV 예상치 {ok}/{total}", total == 36 and ok == 36)

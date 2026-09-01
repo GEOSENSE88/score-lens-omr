@@ -237,6 +237,13 @@ def register_exam(year: int, month: int, grade: int,
         return out
     out["irecord"] = irecord
     progress(f"시험 발견: irecord={irecord}")
+    # 같은 (년,월,학년)의 시험자리 placeholder 제거 — 실제 irecord 가 달라도
+    # 드롭다운에 가짜 시험이 남지 않게 한다.
+    for ph in keys_dir.glob("*_시험자리.json"):
+        pid = ph.stem.split("_")[0]
+        if pid[:6] == f"{year}{month:02d}" and pid.endswith(str(grade)):
+            ph.unlink(missing_ok=True)
+            progress(f"placeholder 제거: {ph.name}")
 
     def has_key(subject: str) -> bool:
         return any(subject in p.stem for p in keys_dir.glob(f"{irecord}_*{subject}*.json"))
