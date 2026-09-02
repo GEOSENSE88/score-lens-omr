@@ -229,6 +229,25 @@ def t65_simfixes():
                if ws.cell(r, 6).value not in (None, "") and ws.cell(r, 10).value not in (None, ""))
     check("성명 혼재 분열 없음", n == 6 and both == 6)
 
+    # b-2) 동명이인은 정상 수험번호가 다르면 서로 다른 학생으로 유지
+    homonym_rows = list(_csv.reader(open(
+        ROOT / "output/_회귀_synth/synth_수학_수학_판독표.csv",
+        encoding="utf-8-sig")))
+    header, body = homonym_rows[0], homonym_rows[1:3]
+    name_i, ban_i, num_i = (header.index(c) for c in ("성명", "반", "번호"))
+    for num, row in zip((3, 4), body):
+        row[name_i], row[ban_i], row[num_i] = "김가영", "80", str(num)
+    homonym = ROOT / "output/_회귀_simfix_homonym.csv"
+    with open(homonym, "w", newline="", encoding="utf-8-sig") as f:
+        _csv.writer(f).writerows([header, *body])
+    out = c.consolidate_paths(1, keys_dir=str(ROOT / "keys"), exam_id="202606041",
+        math=str(homonym), out=str(ROOT / "output/_회귀_simfix_homonym.xlsx"))
+    ws = openpyxl.load_workbook(out)["UNIV 1학년"]
+    same_names = [(ws.cell(r, 3).value, ws.cell(r, 4).value)
+                  for r in range(3, ws.max_row + 1) if ws.cell(r, 5).value == "김가영"]
+    check("동명이인 반·번호로 분리", same_names == [("80", "3"), ("80", "4")],
+          str(same_names))
+
     # c) 과목 바꿔치기 → 무경고 통과 금지 (run_hp: 영어 카드를 수학으로 읽으면
     #    카드별 마크 배치가 달라 정렬실패로, 좌표가 비슷하면 미마킹과다로 드러난다)
     p = run_cli(["run_hp.py", str(ROOT / "work/synth_g12/synth_영어.pdf"),

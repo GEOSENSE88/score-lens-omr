@@ -4,7 +4,8 @@
 
 run.py / run_math.py / run_objective.py / run_explore.py 가 output/ 에 떨군
 과목별 점수표·판독표 CSV 를 학생 단위로 모아 report_export.build_workbook 에 넘긴다.
-학생 매칭 키는 성명(우선) → (반,번호) 순. 성명 조인이 되어 있어야 정확하다.
+학생 매칭은 정확한 (반,번호)를 우선하고, 과목 간 수험번호 오독은 유일한 성명으로
+보완한다. 같은 과목에 동명이인이 있으면 각각의 (반,번호)로 별도 유지한다.
 
     python consolidate.py --grade 3 --out-dir output --keys-dir keys \
         --korean output/20260604165616_점수표.csv \
@@ -101,6 +102,18 @@ def _std_ident(row):
     return dict(반=row.get("반", ""), 번호=row.get("번호", ""), 이름=row.get("성명", ""))
 
 
+def _ident_part(value) -> str:
+    """CSV 식별값을 비교 가능한 문자열로 정규화한다."""
+    text = str(value or "").strip()
+    return text[:-2] if text.endswith(".0") and text[:-2].isdigit() else text
+
+
+def _valid_bb(ident) -> tuple[str, str] | None:
+    """완전한 (반, 번호)만 반환. 판독 불확실 표시는 학생 키로 쓰지 않는다."""
+    bb = (_ident_part(ident.get("반")), _ident_part(ident.get("번호")))
+    return bb if all(bb) and "?" not in "".join(bb) else None
+
+
 def _row_stu_answers(row, limit=60):
     """CSV 행의 문항 컬럼('1'..'60')에서 학생답 추출 — 정답키가 없는 시험
     (정답 공개 전)에서도 검토 UI 에 학생 답안을 보여주기 위한 폴백."""
@@ -123,15 +136,43 @@ def consolidate(args) -> list[dict]:
     exam_id = getattr(args, "exam_id", None)
     students: dict[str, dict] = {}
 
-    def key_of(ident):
-        return ident["이름"] or f'{ident["반"]}-{ident["번호"]}'
+    def get_student(ident, subject_field):
+        """과목 행을 학생에 연결한다.
 
-    def get_student(ident):
-        k = key_of(ident)
-        s = students.get(k)
-        if not s:
-            s = dict(학년=args.grade, 반=ident["반"], 번호=ident["번호"], 이름=ident["이름"], 계열번호="")
-            students[k] = s
+        1) 완전한 (반,번호)가 기존 학생과 같으면 확정 매칭
+        2) 번호가 다르더라도 같은 이름의 후보가 딱 하나이고, 아직 이 과목이
+           들어오지 않았다면 수험번호 오독으로 보고 성명 보완 매칭
+        3) 같은 과목에 같은 이름이 이미 있으면 동명이인이므로 새 학생 생성
+        """
+        bb = _valid_bb(ident)
+        name = str(ident.get("이름") or "").strip()
+        s = None
+        if bb:
+            exact = [candidate for candidate in students.values()
+                     if _valid_bb(candidate) == bb]
+            if exact:
+                s = exact[0]
+        if s is None and name:
+            named = [candidate for candidate in students.values()
+                     if str(candidate.get("이름") or "").strip() == name
+                     and subject_field not in candidate]
+            if len(named) == 1:
+                s = named[0]
+        if s is None:
+            base = (f"id:{bb[0]}-{bb[1]}" if bb else
+                    f"name:{name}" if name else "unknown")
+            key, suffix = base, 2
+            while key in students:
+                key = f"{base}#{suffix}"
+                suffix += 1
+            s = dict(학년=args.grade, 반=ident["반"], 번호=ident["번호"],
+                     이름=ident["이름"], 계열번호="")
+            students[key] = s
+        else:
+            # 같은 학생의 다른 과목에서 더 완전한 식별값을 읽었다면 보강한다.
+            for field in ("반", "번호", "이름"):
+                if not s.get(field) and ident.get(field):
+                    s[field] = ident[field]
         return s
 
     def _clean_num(v):
@@ -163,7 +204,7 @@ def consolidate(args) -> list[dict]:
     # ── 국어: 점수표(고3, 원점수+선택과목) 또는 판독표(고1·2) 자동 감지
     for row in _read_csv(args.korean):
         ident = _std_ident(row)
-        s = get_student(ident)
+        s = get_student(ident, "국어")
         if "원점수" in row:                       # 고3 점수표 포맷
             elective = row.get("선택과목") or "국어"
             ans, pts = _load_key_points(keys_dir, "국어", elective, exam_id)
@@ -190,7 +231,7 @@ def consolidate(args) -> list[dict]:
     # ── 수학: 점수표(고3) 또는 판독표(고1·2) 자동 감지
     for row in _read_csv(args.math):
         ident = _std_ident(row)
-        s = get_student(ident)
+        s = get_student(ident, "수학")
         if "원점수" in row:                       # 고3 점수표 포맷
             elective = row.get("선택과목") or "수학"
             ans, pts = _load_key_points(keys_dir, "수학", elective, exam_id)
@@ -217,7 +258,7 @@ def consolidate(args) -> list[dict]:
     # ── 영어 (판독표): 원점수 + 문항별 정오(학생답 + 정답대조)
     for row in _read_csv(args.english):
         ident = _std_ident(row)
-        s = get_student(ident)
+        s = get_student(ident, "영어")
         ans, pts = _load_key_points(keys_dir, "영어", None, exam_id)
         score_col = row.get("부분점수") or row.get("점수") or 0
         jeongo = {}
@@ -233,7 +274,7 @@ def consolidate(args) -> list[dict]:
     # ── 한국사 (판독표)
     for row in _read_csv(args.history):
         ident = _std_ident(row)
-        s = get_student(ident)
+        s = get_student(ident, "한국사")
         ans, pts = _load_key_points(keys_dir, "한국사", None, exam_id)
         jeongo = {}
         for q in _jeongo_questions(ans, row):
@@ -248,7 +289,7 @@ def consolidate(args) -> list[dict]:
     # ── 탐구 (판독표): 제1·제2 선택
     for row in _read_csv(args.explore):
         ident = _std_ident(row)
-        s = get_student(ident)
+        s = get_student(ident, "탐구")
         tam = []
         for pre in ("제1선택", "제2선택"):
             subj = row.get(f"{pre}과목")
@@ -272,39 +313,11 @@ def consolidate(args) -> list[dict]:
         if tam:
             s["탐구"] = tam
 
-    # 성명 유무 혼재 병합: 일부 CSV 만 성명이 있으면 같은 학생이
-    # 성명키/반-번호키 두 레코드로 갈라진다 → (반,번호) 동일하면 성명 레코드로 흡수.
-    _merge_split_students(students)
-
     # 로스터 순서: 반, 번호
     def sort_key(s):
         return (str(s.get("반", "")), int(s["번호"]) if str(s.get("번호", "")).isdigit() else 0)
 
     return sorted(students.values(), key=sort_key)
-
-
-_SUBJECT_FIELDS = ("국어", "수학", "영어", "한국사", "탐구", "제2외국어")
-
-
-def _merge_split_students(students: dict[str, dict]) -> None:
-    """무성명 레코드('반-번호' 키)를 같은 (반,번호)의 성명 레코드로 병합."""
-    named_by_bb = {}
-    for key, s in students.items():
-        if s.get("이름"):
-            bb = (str(s.get("반", "")), str(s.get("번호", "")))
-            if all(bb) and "?" not in bb[0] + bb[1]:
-                named_by_bb.setdefault(bb, key)
-    for key in [k for k, s in students.items() if not s.get("이름")]:
-        s = students[key]
-        bb = (str(s.get("반", "")), str(s.get("번호", "")))
-        target_key = named_by_bb.get(bb)
-        if not target_key or target_key == key:
-            continue
-        target = students[target_key]
-        for f in _SUBJECT_FIELDS:
-            if f in s and f not in target:
-                target[f] = s[f]
-        del students[key]
 
 
 def _attach_estimates(students: list[dict], exam_id: str | None, keys_dir) -> dict:
@@ -454,30 +467,41 @@ def _merge_integrated(args, students):
     """고1·2 통합사회/통합과학 판독표를 학생 탐구[0]/탐구[1] 로 편입.
 
     탐구 CSV 에만 있는 학생도 레코드를 생성한다 (무경고 탈락 방지).
-    매칭은 성명 → (반,번호) 순으로 시도.
+    매칭은 정확한 (반,번호) → 해당 통합과목이 비어 있는 유일 성명 순으로 시도.
     """
     keys_dir = Path(args.keys_dir)
     exam_id = getattr(args, "exam_id", None)
-    by_name = {s["이름"]: s for s in students if s.get("이름")}
-    by_bb = {(str(s.get("반", "")), str(s.get("번호", ""))): s for s in students}
+    by_name = {}
+    for s in students:
+        if s.get("이름"):
+            by_name.setdefault(s["이름"], []).append(s)
+    by_bb = {_valid_bb(s): s for s in students if _valid_bb(s)}
 
-    def find_or_create(ident):
-        s = by_name.get(ident["이름"]) if ident["이름"] else None
-        if not s:
-            s = by_bb.get((str(ident["반"]), str(ident["번호"])))
+    def find_or_create(ident, slot):
+        bb = _valid_bb(ident)
+        s = by_bb.get(bb) if bb else None
+        if not s and ident["이름"]:
+            candidates = []
+            for candidate in by_name.get(ident["이름"], []):
+                tam = candidate.get("탐구") or []
+                if len(tam) <= slot or tam[slot] is None:
+                    candidates.append(candidate)
+            if len(candidates) == 1:
+                s = candidates[0]
         if not s:
             s = dict(학년=args.grade, 반=ident["반"], 번호=ident["번호"],
                      이름=ident["이름"], 계열번호="")
             students.append(s)
             if ident["이름"]:
-                by_name[ident["이름"]] = s
-            by_bb[(str(ident["반"]), str(ident["번호"]))] = s
+                by_name.setdefault(ident["이름"], []).append(s)
+            if bb:
+                by_bb[bb] = s
         return s
 
     def add(path, subject, slot):
         for row in _read_csv(path):
             ident = _std_ident(row)
-            s = find_or_create(ident)
+            s = find_or_create(ident, slot)
             ans, pts = _load_key_points(keys_dir, subject, None, exam_id)
             jeongo = {}
             for q in _jeongo_questions(ans, row):
