@@ -16,6 +16,7 @@ EBSi 시험 자동 등록 (score_lens / omr_scorer)
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -296,7 +297,9 @@ def register_exam(year: int, month: int, grade: int,
         out["mimac"] = f"미맥 수집 실패: {exc}"
 
     # ── 고3 ──
-    env_cmd = dict(cwd=ROOT, text=True, encoding="utf-8", errors="replace",
+    child_env = os.environ.copy()
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    env_cmd = dict(cwd=ROOT, env=child_env, text=True, encoding="utf-8", errors="replace",
                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
 
     # 국어·수학 — XIP(정답 API) 우선. 시도교육청 학평의 해설 PDF 레이아웃이
@@ -320,7 +323,7 @@ def register_exam(year: int, month: int, grade: int,
     elif has_key("수학"):
         out["skipped"].append("수학(이미 있음)")
     else:
-        progress("수학 정답키 추출 중… (EBSi 문제/해설 PDF 폴백)")
+        progress("수학 정답키 추출 중… (EBSi 문제/정답 자료 폴백)")
         p = subprocess.run([sys.executable, "math_keys.py", irecord], **env_cmd)
         (out["created"] if p.returncode == 0 else out["errors"]).append(
             "수학" if p.returncode == 0 else f"수학: {p.stdout[-300:]}")

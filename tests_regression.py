@@ -562,6 +562,32 @@ def t97_xip_kuksu():
     check("XIP 국·수 키가 stored 6월 키와 일치", ok, p.stdout[-300:])
 
 
+def t975_math_answer_png():
+    print("[9.7.5] EBSi 해설 PDF 게시 전 수학 정답 PNG 폴백")
+    import math_keys as mk
+    from ebsi_math_answer_png import parse_answer_image
+    try:
+        urls = mk.resolve_math_pdfs("202609023")
+        if "ans" not in urls:
+            print("  – EBSi 정답 PNG URL 없음 → 건너뜀")
+            return
+        got = parse_answer_image(mk._get(urls["ans"]))
+    except Exception as exc:
+        print(f"  – EBSi 접속 불가 → 건너뜀 ({exc!r})")
+        return
+    common = [4, 3, 2, 2, 1, 5, 2, 3, 1, 3, 3, 4, 5, 5, 4,
+              6, 11, 38, 15, 17, 12, 97]
+    electives = {
+        "확률과 통계": [1, 4, 5, 2, 3, 5, 190, 170],
+        "미적분": [4, 1, 3, 2, 5, 4, 81, 49],
+        "기하": [1, 2, 4, 5, 3, 2, 60, 457],
+    }
+    ok = [got["공통"][q] for q in range(1, 23)] == common
+    ok = ok and all([got[el][q] for q in range(23, 31)] == answers
+                    for el, answers in electives.items())
+    check("2027학년도 9월 모평 수학 PNG 3선택과목·30문항 일치", ok)
+
+
 def t98_multi_pdf_merge():
     print("[9.8] 한 과목 여러 PDF 업로드 → 병합 (스캐너 분할본 대응)")
     code = (
@@ -679,7 +705,7 @@ def main() -> int:
     for t in [t1_imports, t2_key_isolation, t3_history_g3, t4_consolidate_g3,
               t5_synth_g12, t6_edge, t65_simfixes, t67_autorotate, t7_calibrator, t8_report_layouts,
               t9_grade_cuts, t93_mimac, t95_proxy_security, t96_results_edit,
-              t97_xip_kuksu, t98_multi_pdf_merge, t99_chunked_upload,
+              t97_xip_kuksu, t975_math_answer_png, t98_multi_pdf_merge, t99_chunked_upload,
               t100_hp_units] + ([t10_web] if web else []):
         try:
             t()

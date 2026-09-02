@@ -3,7 +3,10 @@
 EBSi 풀서비스 → 수학 정답·배점 자동 추출 → keys/*.json
 score_lens / omr_scorer
 
-수학 해설 정답표: [공통: 수학Ⅰ·수학Ⅱ] 1-15 객관식(원문자)+16-22 단답(숫자),
+해설 PDF가 있으면 글자를 읽고, 해설 게시 전에는 먼저 올라온
+``math_main_ans_*.png`` 정답표를 읽는다.
+
+수학 정답표: [공통: 수학Ⅰ·수학Ⅱ] 1-15 객관식(원문자)+16-22 단답(숫자),
 [선택: 확률과 통계/미적분/기하] 각 23-28 객관식+29-30 단답.
 배점: 문제지의 [3점]/[4점] 표시(없으면 2점). 선택과목별 총점 100 검증.
 
@@ -13,6 +16,8 @@ from __future__ import annotations
 import json, re, sys, urllib.request
 from pathlib import Path
 import fitz
+
+from ebsi_math_answer_png import parse_answer_image
 
 BASE = "https://www.ebsi.co.kr"
 HDR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -30,16 +35,18 @@ def _get(url, referer=None):
 
 
 def resolve_math_pdfs(irecord):
+    """수학 문제지와 해설 PDF 또는 정답 PNG URL을 찾는다."""
     ref = f"{BASE}/ebs/xip/xipa/retrieveSCVMainInfo.ebs?irecord={irecord}&targetCd=D200"
     html = _get(f"{BASE}/ebs/xip/xipt/RetrieveSCVMainTop.ajax?irecord={irecord}", ref).decode("cp949", "ignore")
-    pdfs = re.findall(r"https?://wdown\.ebsi\.co\.kr/[^\s\"')]+\.pdf", html)
+    sources = re.findall(r"https?://wdown\.ebsi\.co\.kr/[^\s\"')]+\.(?:pdf|png)", html)
     out = {}
-    for u in pdfs:
+    for u in sources:
         nm = u.rsplit("/", 1)[-1]
         if nm.startswith("math_main_mun"): out["mun"] = u
         elif nm.startswith("math_main_hsj"): out["hsj"] = u
-    if "mun" not in out or "hsj" not in out:
-        raise RuntimeError(f"수학 PDF 못 찾음: {pdfs}")
+        elif nm.startswith("math_main_ans"): out["ans"] = u
+    if "mun" not in out or not ({"hsj", "ans"} & set(out)):
+        raise RuntimeError(f"수학 문제/정답 자료 못 찾음: {sources}")
     return out
 
 
@@ -112,8 +119,14 @@ def build_keys(irecord, exam_name=""):
     KEYS_DIR.mkdir(exist_ok=True); WORK_DIR.mkdir(exist_ok=True)
     urls = resolve_math_pdfs(irecord)
     mun = WORK_DIR / f"_{irecord}_math_mun.pdf"; mun.write_bytes(_get(urls["mun"]))
-    hsj = WORK_DIR / f"_{irecord}_math_hsj.pdf"; hsj.write_bytes(_get(urls["hsj"]))
-    answers, points = parse_answers(hsj), parse_points(mun)
+    if "hsj" in urls:
+        hsj = WORK_DIR / f"_{irecord}_math_hsj.pdf"; hsj.write_bytes(_get(urls["hsj"]))
+        answers = parse_answers(hsj)
+    else:
+        ans = WORK_DIR / f"_{irecord}_math_ans.png"; ans.write_bytes(_get(urls["ans"]))
+        print("  해설 PDF 게시 전 - EBSi 정답 PNG에서 추출")
+        answers = parse_answer_image(ans)
+    points = parse_points(mun)
     written = []
     for el in ELECTIVES:
         q = {}
