@@ -248,6 +248,25 @@ def t65_simfixes():
     check("동명이인 반·번호로 분리", same_names == [("80", "3"), ("80", "4")],
           str(same_names))
 
+    # b-3) 정답 공개 전 수학 단답 빈칸도 문항 누락이 아닌 미마킹(0)으로 표시
+    nokey_header = ["반", "번호", "성명", "선택과목", "원점수", "만점",
+                    "틀린문항", "페이지", "확인필요", *map(str, range(1, 31))]
+    nokey_answers = [str((q % 5) + 1) for q in range(1, 31)]
+    for q in (20, 21, 22):
+        nokey_answers[q - 1] = ""
+    nokey_math = ROOT / "output/_회귀_simfix_math_blanks.csv"
+    with open(nokey_math, "w", newline="", encoding="utf-8-sig") as f:
+        _csv.writer(f).writerows([
+            nokey_header,
+            ["80", "10", "김재영", "확률과통계", "", "", "", "10", "",
+             *nokey_answers],
+        ])
+    students = c.build_students(3, keys_dir=str(ROOT / "keys"),
+        math=str(nokey_math), exam_id="202609043")
+    cells = students[0]["수학"]["정오"]
+    check("정답 전 단답 미마킹 셀 유지",
+          len(cells) == 30 and [cells[q]["답"] for q in (20, 21, 22)] == [0, 0, 0])
+
     # c) 과목 바꿔치기 → 무경고 통과 금지 (run_hp: 영어 카드를 수학으로 읽으면
     #    카드별 마크 배치가 달라 정렬실패로, 좌표가 비슷하면 미마킹과다로 드러난다)
     p = run_cli(["run_hp.py", str(ROOT / "work/synth_g12/synth_영어.pdf"),

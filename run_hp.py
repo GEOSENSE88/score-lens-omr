@@ -268,7 +268,8 @@ def rows_for(kind: str, recs: list[dict], keys: dict, names: dict) -> list[dict]
             allans = dict(rec["ans"])
             allans.update(rec["sa"])
             for q in range(1, 31):
-                row[str(q)] = _ans_str(allans.get(q))
+                value = allans.get(q)
+                row[str(q)] = _ans_str(0 if value is None else value)
             if any(v == -1 for v in rec["sa"].values()):
                 fl.append("단답중복")
             key = keys["math_g12"]
@@ -300,7 +301,7 @@ def rows_for(kind: str, recs: list[dict], keys: dict, names: dict) -> list[dict]
             ch = rec.get("choice")
             for q in range(1, 31):
                 v = rec["ans"].get(q) if (q <= 15 or 23 <= q <= 28) else rec["sa"].get(q)
-                row[str(q)] = _ans_str(v)
+                row[str(q)] = _ans_str(0 if v is None else v)
             if not keys["math"]:              # 정답키 미등록 — 판독표만
                 row.update(선택과목=ch or "", 원점수="", 만점="")
             elif ch in keys["math"]:

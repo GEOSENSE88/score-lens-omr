@@ -115,14 +115,20 @@ def _valid_bb(ident) -> tuple[str, str] | None:
 
 
 def _row_stu_answers(row, limit=60):
-    """CSV 행의 문항 컬럼('1'..'60')에서 학생답 추출 — 정답키가 없는 시험
-    (정답 공개 전)에서도 검토 UI 에 학생 답안을 보여주기 위한 폴백."""
+    """CSV 행의 문항 컬럼('1'..'60')에서 학생답 추출.
+
+    정답 공개 전에도 모든 문항 셀을 보여준다. 특히 수학 단답 미마킹은 원시
+    CSV 에 빈 문자열로 남을 수 있으므로 0(미마킹)으로 정규화한다.
+    """
     out = {}
-    for q in range(1, limit + 1):
-        v = row.get(str(q))
+    for key, v in row.items():
+        if not str(key).isdigit():
+            continue
+        q = int(key)
+        if not 1 <= q <= limit:
+            continue
         s = str(v).strip() if v is not None else ""
-        if s and s.lstrip("-").isdigit():
-            out[q] = int(s)
+        out[q] = int(s) if s.lstrip("-").isdigit() else 0
     return out
 
 
@@ -214,7 +220,7 @@ def consolidate(args) -> list[dict]:
                 pt = pts.get(q, 0)
                 ok = (q not in wrong) if pts else False
                 stu = row.get(str(q))              # 점수표 CSV의 문항별 학생답(있으면)
-                stu = int(stu) if str(stu).lstrip("-").isdigit() else ""
+                stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
                 jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pt, "ok": ok}
                 if ok:
                     if q <= 34:
@@ -241,7 +247,7 @@ def consolidate(args) -> list[dict]:
                 pt = pts.get(q, 0)
                 ok = (q not in wrong) if pts else False
                 stu = row.get(str(q))              # 점수표 CSV의 문항별 학생답(있으면)
-                stu = int(stu) if str(stu).lstrip("-").isdigit() else ""
+                stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
                 jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pt, "ok": ok}
                 if ok:
                     if q <= 22:
