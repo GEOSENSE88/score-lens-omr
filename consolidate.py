@@ -299,6 +299,12 @@ def consolidate(args) -> list[dict]:
         tam = []
         for pre in ("제1선택", "제2선택"):
             subj = row.get(f"{pre}과목")
+            if not subj and row.get(f"{pre}코드"):
+                # 정답키 등록 '전'에 생성된 판독표는 과목명 없이 코드만 있다
+                # (run_hp 키-부재 가드) — 코드로 과목명을 복원해 채점을 살린다.
+                from hp_run import EXPL_CODES
+                code = str(row[f"{pre}코드"]).strip()
+                subj = EXPL_CODES.get(int(code)) if code.isdigit() else None
             if not subj:
                 continue
             ans, pts = _load_key_points(keys_dir, subj, None, exam_id)
@@ -311,8 +317,13 @@ def consolidate(args) -> list[dict]:
                 stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
                 jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pts.get(q, 0),
                              "ok": stu == ans[q] if q in ans else False}
-            tam.append(dict(과목=subj,
-                            원점수=_num_score(row.get(f"{pre}점수")) if ans else "",
+            score_col = row.get(f"{pre}점수")
+            if ans and str(score_col or "").strip() == "":
+                # 키 등록 '전' 판독표(점수 컬럼 없음) — 정오에서 재계산
+                score = _num_score(sum(c["배점"] for c in jeongo.values() if c["ok"]))
+            else:
+                score = _num_score(score_col) if ans else ""
+            tam.append(dict(과목=subj, 원점수=score,
                             만점=_num_score(row.get(f"{pre}만점"), 50) if ans else "",
                             정오=jeongo,
                             확인=row.get("확인필요", ""), 페이지=row.get("페이지", "")))
