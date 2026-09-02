@@ -186,10 +186,20 @@ def rectify_verified(img: np.ndarray, tmpl: dict) -> tuple[np.ndarray, dict]:
         # 많아(실사용 corr 0.41 vs 0.30 마진 미달 사례) 경계 페이지를 회복한다.
         k1 = _id_readback_pick(out, tmpl, pitch,
                                [k for k, _ in ranked[:3] if scores[k] >= 0.30])
+        resolved_by = "id_readback"
+        if k1 is None:
+            # 3차: 수험번호 읽기-검증의 넓은 스윕 — 가장자리 마크가 여럿 잘린
+            # 스캔(급지 밀림)은 마크 매칭이 여러 pitch 밀린 국소해에 앉아
+            # ±2 범위 밖이 되고, 스케일 오차로 프로파일 상관도 뭉개진다
+            # (2026-09 영어 dx -8pitch 실사례). 수험번호 판독은 국소 그리드라
+            # 이런 왜곡에 견고 — 기준과 일치하는 '유일한' 시프트만 채택.
+            k1 = _id_readback_pick(out, tmpl, pitch, list(range(-10, 11)))
+            resolved_by = "id_wide_sweep"
+            if k1 is not None:
+                scores[k1] = _shift_corr(prof, refp, int(round(k1 * pitch)))
         if k1 is None:
             pretty = {k: round(v, 3) for k, v in scores.items()}
             raise hp_align.AlignError(f"격자 검증 모호 (상관 {pretty})")
-        resolved_by = "id_readback"
         s1 = scores[k1]
     if k1 != 0:
         M = np.array([[1, 0, -k1 * pitch], [0, 1, 0]], dtype=float)
@@ -215,7 +225,7 @@ def _id_readback_pick(img: np.ndarray, tmpl: dict, pitch: float,
     import hp_id
     gray = pencil_gray(img)
     ncols = len(idg["xs"])
-    hits = []
+    hits, partial_hits = [], []
     for k in cands:
         xs = [x + k * pitch for x in idg["xs"]]
         rid = hp_id.read_id(gray, dict(idg, xs=xs))
@@ -223,12 +233,18 @@ def _id_readback_pick(img: np.ndarray, tmpl: dict, pitch: float,
             ok = rid.get("school") == SCHOOL_CODE
         elif ncols == 9:
             ok = rid.get("school") == SCHOOL_CODE % 10000
+            # 급지 밀림 스캔은 좌측(학교번호) 열이 화면 밖 — 학교가 통째로
+            # 안 읽히면 반·번호 완전 판독을 차선 증거로(전 후보 중 유일할 때만).
+            if not ok and rid.get("school") is None \
+                    and rid.get("ban") is not None and rid.get("num") is not None:
+                partial_hits.append(k)
         else:
             ok = (rid.get("grade") == 3 and rid.get("ban") is not None
                   and rid.get("num") is not None)
         if ok:
             hits.append(k)
-    return hits[0] if len(hits) == 1 else None
+    picked = hits or partial_hits
+    return picked[0] if len(picked) == 1 else None
 
 
 def rectified_pages(pdf: Path, ref: dict, limit: int | None = None,

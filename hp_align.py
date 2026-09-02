@@ -44,24 +44,50 @@ def band_marks(gray: np.ndarray, band: int = BAND) -> np.ndarray:
 
 
 def _fit_line(marks: np.ndarray) -> tuple[np.ndarray, float, float]:
-    """마크들에서 일직선 행만 남긴다 → (inliers, slope, resid_mad)."""
+    """마크들에서 일직선 행만 남긴다 → (inliers, slope, resid_mad).
+
+    시작점을 y 중앙값 하나로 잡으면 밴드에 잡음 띠(위 페이지 잔영 등)가
+    많을 때 중앙값이 마크 행 밖으로 밀려 발산한다(2026-09 탐구 스캔 실사례)
+    → y 군집 후보별로 적합해 등간격 사슬 점수가 최대인 것을 채택한다."""
     pts = marks[np.argsort(marks[:, 0])]
-    # 반복 강건 적합: y 중앙값 근방 → polyfit → 잔차 큰 점 제거
-    # (창 150px = skew 5° 에서 전폭 y 편차 ±145px 수용)
-    keep = pts[np.abs(pts[:, 1] - np.median(pts[:, 1])) < 150]
-    for _ in range(3):
-        if len(keep) < 5:
-            return keep, 0.0, 1e9
+
+    def fit_at(c: float, win: float):
+        keep = pts[np.abs(pts[:, 1] - c) < win]
+        for _ in range(3):
+            if len(keep) < 5:
+                return keep, 0.0, 1e9
+            m, b = np.polyfit(keep[:, 0], keep[:, 1], 1)
+            r = keep[:, 1] - (m * keep[:, 0] + b)
+            mad = float(np.median(np.abs(r - np.median(r)))) + 1e-6
+            nk = keep[np.abs(r) < max(6.0, 4 * mad)]
+            if len(nk) == len(keep):
+                break
+            keep = nk
         m, b = np.polyfit(keep[:, 0], keep[:, 1], 1)
         r = keep[:, 1] - (m * keep[:, 0] + b)
-        mad = float(np.median(np.abs(r - np.median(r)))) + 1e-6
-        nk = keep[np.abs(r) < max(6.0, 4 * mad)]
-        if len(nk) == len(keep):
-            break
-        keep = nk
-    m, b = np.polyfit(keep[:, 0], keep[:, 1], 1)
-    r = keep[:, 1] - (m * keep[:, 0] + b)
-    return keep, float(m), float(np.median(np.abs(r)))
+        return keep, float(m), float(np.median(np.abs(r)))
+
+    ys = np.sort(pts[:, 1])
+    groups, cur = [], [float(ys[0])]
+    for v in ys[1:]:
+        if v - cur[-1] <= 40:
+            cur.append(float(v))
+        else:
+            groups.append(cur)
+            cur = [float(v)]
+    groups.append(cur)
+    cands = sorted({float(np.median(g)) for g in groups if len(g) >= 5}
+                   | {float(np.median(pts[:, 1]))})
+    best = None
+    for c in cands:
+        # 좁은 창(60): 밴드 잡음이 초기 기울기를 왜곡하는 스캔 대응 /
+        # 넓은 창(150): skew 5° 에서 전폭 y 편차 ±145px 수용 — 최고 사슬 채택
+        for win in (60.0, 150.0):
+            keep, m, resid = fit_at(c, win)
+            score = _chain_score(keep) if resid < 8 else 0
+            if best is None or score > best[0]:
+                best = (score, keep, m, resid)
+    return best[1], best[2], best[3]
 
 
 def _chain_score(inliers: np.ndarray) -> int:

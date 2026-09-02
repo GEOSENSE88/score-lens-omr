@@ -50,6 +50,9 @@ SUBJ_SETUP_CB = {
 SUBJ_SETUP_PG = {
     "국어": (["korean_g3pg"], "korean", "_점수표.csv"),
     "수학": (["math_g3pg"], "math", "_수학_점수표.csv"),
+    "영어": (["english_g3pg"], "english", "_영어_판독표.csv"),
+    "한국사": (["history_g3pg"], "history", "_한국사_판독표.csv"),
+    "탐구": (["expl1_g3pg", "expl2_g3pg"], "explore", "_탐구_판독표.csv"),
 }
 # 고1·2 전국연합 학평 카드(--card g12) — 2026-09 고2 백지 서식 실측 보정.
 # 수험번호 9열(학교4+학년1+반2+번호2), 국어·수학은 선택과목 없음(공통),
