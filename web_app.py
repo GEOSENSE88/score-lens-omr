@@ -374,7 +374,11 @@ _G3_PG = [
          subject_arg="국어", card="pg", names=True,
          template="templates/korean_g3pg.json", id_layout=None,
          csv_kind="korean", csv_suffix="_점수표.csv"),
-] + [s for s in SUBJECTS_BY_GRADE[3] if s["key"] != "korean"]
+    dict(key="math", label="수학", icon="∑", script="run_hp.py",
+         subject_arg="수학", card="pg", names=True,
+         template="templates/math_g3pg.json", id_layout=None,
+         csv_kind="math", csv_suffix="_수학_점수표.csv"),
+] + [s for s in SUBJECTS_BY_GRADE[3] if s["key"] not in ("korean", "math")]
 
 # 충북교육청 모의평가 카드 — 실물 스캔이 보정된 과목만 활성(현재 국어).
 # 다른 과목은 카드 스캔 확보 후 work/hp_cb/calibrate_cb.py 로 보정하면

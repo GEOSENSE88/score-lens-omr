@@ -84,9 +84,11 @@ def _union_vote(vals_per_page: list[list[float]], want: int, npages: int,
     return [round(y0 + pitch * k, 1) for k in range(want)]
 
 
-def calibrate_extras(spec: dict, pages, blob_fn=None) -> dict:
+def calibrate_extras(spec: dict, pages, blob_fn=None, min_pts: int = 2) -> dict:
     """rectify 된 페이지 이터러블에서 grids/selects 좌표 합의(합집합 투표).
-    blob_fn 기본은 마킹만(mark_blobs) — 백지 서식 보정은 print_blobs 전달."""
+    blob_fn 기본은 마킹만(mark_blobs) — 백지 서식 보정은 print_blobs 전달.
+    min_pts: 페이지당 창 내 최소 관측(기본 2). 단답형처럼 정답이 한 자리면
+    전 페이지가 1점뿐일 수 있어 실물 보정에서는 1을 권장."""
     if blob_fn is None:
         blob_fn = hp_g3.mark_blobs      # 마킹만 — 인쇄색·배경색 무관
     grids = {g["name"]: {"cols": [], "rows": [], "g": g} for g in spec.get("grids", [])}
@@ -100,7 +102,7 @@ def calibrate_extras(spec: dict, pages, blob_fn=None) -> dict:
             g = st["g"]
             sub = blobs[(blobs[:, 0] > g["x_lo"]) & (blobs[:, 0] < g["x_hi"])
                         & (blobs[:, 1] > g["y_lo"]) & (blobs[:, 1] < g["y_hi"])]
-            if len(sub) < 2:
+            if len(sub) < min_pts:
                 continue
             st["cols"].append(sorted(oc._cluster(sub[:, 0], 26)))
             st["rows"].append(sorted(oc._cluster(sub[:, 1], 30)))
