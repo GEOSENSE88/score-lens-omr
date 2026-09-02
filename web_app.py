@@ -364,6 +364,17 @@ _G3_HP = [
 ]
 HP_MONTHS = {3, 4, 7, 10}   # 전국연합 학력평가 시행 월
 CB_MONTHS = {8}             # 충북교육청 모의평가(수능 대비 자체 시행)
+PG_MONTHS = {9}             # 평가원 2027학년도 신형 카드(2026-09 모평 실측)
+
+# 9월 평가원 모평 — 국어는 신형 카드 실물 보정 완료(run_hp --card pg).
+# 나머지 과목은 카드 스캔 확보 전까지 기존 평가원 판독기 유지(서식이 다르면
+# 페이지별 '판독실패' 플래그로 드러나며, 스캔 확보 시 calibrate_g3pg 로 보정).
+_G3_PG = [
+    dict(key="korean", label="국어", icon="가", script="run_hp.py",
+         subject_arg="국어", card="pg", names=True,
+         template="templates/korean_g3pg.json", id_layout=None,
+         csv_kind="korean", csv_suffix="_점수표.csv"),
+] + [s for s in SUBJECTS_BY_GRADE[3] if s["key"] != "korean"]
 
 # 충북교육청 모의평가 카드 — 실물 스캔이 보정된 과목만 활성(현재 국어).
 # 다른 과목은 카드 스캔 확보 후 work/hp_cb/calibrate_cb.py 로 보정하면
@@ -405,6 +416,8 @@ def catalog_for(grade: int, exam_id: str | None) -> list[dict]:
             return _G3_HP
         if mo in CB_MONTHS:
             return _G3_CB
+        if mo in PG_MONTHS:
+            return _G3_PG
     return SUBJECTS_BY_GRADE[grade]
 
 

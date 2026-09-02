@@ -44,6 +44,12 @@ SUBJ_SETUP_CB = {
     "수학": (["math_g3cb"], "math", "_수학_점수표.csv"),
     "영어": (["english_g3cb"], "english", "_영어_판독표.csv"),
 }
+# 평가원 2027학년도 신형 카드(--card pg, 2026-09 모평부터) — 실물 스캔 보정.
+# 수험번호 = 학교(학원)4[첫자리 1 인쇄] + 빈칸 + 반2 + 번호2 (9열 분기 재사용,
+# grade 자리는 구분 빈칸이라 None). 카드 스캔이 확보된 과목만 등록.
+SUBJ_SETUP_PG = {
+    "국어": (["korean_g3pg"], "korean", "_점수표.csv"),
+}
 # 고1·2 전국연합 학평 카드(--card g12) — 2026-09 고2 백지 서식 실측 보정.
 # 수험번호 9열(학교4+학년1+반2+번호2), 국어·수학은 선택과목 없음(공통),
 # 수학 단답형은 22~30. CSV 는 판독표 포맷('점수' 컬럼) — consolidate 의
@@ -390,8 +396,9 @@ def main() -> int:
     ap.add_argument("pdf", type=Path)
     ap.add_argument("--subject", required=True,
                     choices=sorted({*SUBJ_SETUP, *SUBJ_SETUP_G12}))
-    ap.add_argument("--card", default="hp", choices=("hp", "cb", "g12"),
-                    help="카드 양식: hp=고3 학평 / cb=충북 모의평가 / g12=고1·2 학평")
+    ap.add_argument("--card", default="hp", choices=("hp", "cb", "g12", "pg"),
+                    help="카드 양식: hp=고3 학평 / cb=충북 모의평가 / "
+                         "g12=고1·2 학평 / pg=평가원 신형(2026-09~)")
     ap.add_argument("--keys-dir", type=Path, default=HERE / "keys")
     ap.add_argument("--irecord", default=None)
     ap.add_argument("--out", type=Path, required=True)
@@ -404,7 +411,8 @@ def main() -> int:
                     default=int(os.environ.get("OMR_WORKERS", "0")) or auto)
     a = ap.parse_args()
 
-    setup = {"cb": SUBJ_SETUP_CB, "g12": SUBJ_SETUP_G12}.get(a.card, SUBJ_SETUP)
+    setup = {"cb": SUBJ_SETUP_CB, "g12": SUBJ_SETUP_G12,
+             "pg": SUBJ_SETUP_PG}.get(a.card, SUBJ_SETUP)
     if a.subject not in setup:
         print(f"[오류] {a.subject}: 이 카드 양식({a.card})은 해당 과목이 아직 "
               "보정되지 않았습니다", flush=True)
