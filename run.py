@@ -86,7 +86,8 @@ def write_excel(rows: list[dict], out_xlsx: Path) -> None:
             stu = pq["student"]
             cell.value = {0: "·", -1: "중"}.get(stu, stu)
             cell.alignment = Alignment(horizontal="center")
-            cell.fill = green if pq["result"] == "O" else red if pq["result"] == "X" else gray
+            res_mark = pq.get("result", "")   # 키 없음(공개 전) — 정오 미표시
+            cell.fill = green if res_mark == "O" else red if res_mark == "X" else gray
     ws2.freeze_panes = ws2.cell(1, nb + 1).coordinate
     ws2.column_dimensions["D"].width = 9
     for q in range(1, 46):
@@ -109,9 +110,10 @@ def main() -> int:
         print(f"[오류] PDF 없음: {args.pdf}", file=sys.stderr); return 1
     keys = load_keys(args.keys_dir, args.irecord)
     if not keys:
-        print(f"[오류] 정답키 없음: {args.keys_dir} (ebsi_keys.py 로 먼저 생성)", file=sys.stderr)
-        return 1
-    print(f"정답키 로드: {list(keys)}")
+        # 시험 당일 등 정답 공개 전 — 채점 없이 판독표만 생성한다
+        print("정답키 없음 — 채점 없이 판독표만 생성합니다 (키 등록 후 재실행 시 채점).")
+    else:
+        print(f"정답키 로드: {list(keys)}")
 
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -146,15 +148,21 @@ def main() -> int:
                        correct_count=g["correct_count"], wrong=g["wrong"],
                        blank=g["blank"], dup=g["dup"], per_q=g["per_q"])
         else:
+            # 키 없음 — 학생답은 보존해 판독표·정오표 그리드에 표시되게 한다
+            per_q = {q: {"student": a} for q, a in res["answers"].items()}
             row = dict(**base, score=None, max_score=100, correct_count=0,
-                       wrong=[], blank=[], dup=[], per_q={})
+                       wrong=[], blank=[], dup=[], per_q=per_q)
         rows.append(row)
         # 신뢰도 점검: 학교번호 이상 / 선택과목 미검출 / 미마킹·중복 과다 → 수동 확인
         warns = []
         if sid["school"] != "19718":
             warns.append(f"학교번호 {sid['school']}")
         if not key:
-            warns.append("선택과목 미검출/키없음")
+            # 정답키가 아예 없는 시험(공개 전)이면 전 페이지 공통 상황이라 경고 생략
+            if keys:
+                warns.append("선택과목 미검출/키없음")
+            elif not res["subject"]:
+                warns.append("선택과목 미검출")
         if len(row["blank"]) > 8:
             warns.append(f"미마킹 {len(row['blank'])}개")
         if row["dup"]:

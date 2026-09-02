@@ -237,13 +237,17 @@ def register_exam(year: int, month: int, grade: int,
         return out
     out["irecord"] = irecord
     progress(f"시험 발견: irecord={irecord}")
-    # 같은 (년,월,학년)의 시험자리 placeholder 제거 — 실제 irecord 가 달라도
-    # 드롭다운에 가짜 시험이 남지 않게 한다.
-    for ph in keys_dir.glob("*_시험자리.json"):
-        pid = ph.stem.split("_")[0]
-        if pid[:6] == f"{year}{month:02d}" and pid.endswith(str(grade)):
-            ph.unlink(missing_ok=True)
-            progress(f"placeholder 제거: {ph.name}")
+
+    def _drop_placeholders():
+        # 같은 (년,월,학년)의 시험자리 placeholder 제거 — 실제 irecord 가 달라도
+        # 드롭다운에 가짜 시험이 남지 않게 한다. ⚠️ 반드시 키 생성이 하나라도
+        # 성공한 뒤에만 — 시험은 발견됐지만 정답 미공개(시험 당일)면 placeholder
+        # 를 지우면 안 된다(2026-09-02 고2 9월 실사고).
+        for ph in keys_dir.glob("*_시험자리.json"):
+            pid = ph.stem.split("_")[0]
+            if pid[:6] == f"{year}{month:02d}" and pid.endswith(str(grade)):
+                ph.unlink(missing_ok=True)
+                progress(f"placeholder 제거: {ph.name}")
 
     def has_key(subject: str) -> bool:
         return any(subject in p.stem for p in keys_dir.glob(f"{irecord}_*{subject}*.json"))
@@ -276,7 +280,10 @@ def register_exam(year: int, month: int, grade: int,
         # subj_<ID> 키에서 과목ID 추출해 등급컷 조회
         ids = ",".join(re.sub(r"^subj_", "", k) for k in papers) if papers else None
         fetch_cuts(ids)
-        return _register_g12(irecord, papers, keys_dir, has_key, out, progress)
+        res = _register_g12(irecord, papers, keys_dir, has_key, out, progress)
+        if res.get("created") or res.get("skipped"):
+            _drop_placeholders()
+        return res
     fetch_cuts(None)   # 고3: 국수영한/사탐/과탐 고정 그룹
 
     # 고3 국어·수학 원점수 등급컷은 EBSi 가 비공개('-') → 미맥에서 선택과목별로 보강
@@ -332,6 +339,8 @@ def register_exam(year: int, month: int, grade: int,
             out["created"].append(subject)
         except Exception as exc:
             out["errors"].append(f"{subject}: {exc}")
+    if out.get("created") or out.get("skipped"):
+        _drop_placeholders()
     return out
 
 

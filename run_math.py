@@ -65,6 +65,7 @@ def grade_math(answers, key):
 def write_outputs(rows, out, stem):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
+    out.mkdir(parents=True, exist_ok=True)
     wb = Workbook(); ws = wb.active; ws.title = "점수표"
     head = ["페이지", "학교(학원)번호", "반", "번호", "성명", "선택과목",
             "원점수", "만점", "맞은문항수", "틀린문항"]
@@ -147,8 +148,10 @@ def main():
         if not args.irecord or str(k.get("irecord")) == str(args.irecord):
             keys[normalize_elective(k["elective"])] = k
     if not keys:
-        print("[오류] 수학 정답키 없음 (math_keys.py 로 생성)"); return 1
-    print(f"수학 정답키: {list(keys)}")
+        # 시험 당일 등 정답 공개 전 — 채점 없이 판독표만 생성한다
+        print("수학 정답키 없음 — 채점 없이 판독표만 생성합니다 (키 등록 후 재실행 시 채점).")
+    else:
+        print(f"수학 정답키: {list(keys)}")
     names_full, names_beon = load_name_map(args.names)
     print(f"성명 조인: {len(names_full)}명 (국어 점수표)")
     template = mc.load_template(args.template)
@@ -176,7 +179,11 @@ def main():
         if "?" in f"{sid['school']}{sid['ban']}{sid['beon']}":
             warns.append("수험번호")
         if not key:
-            warns.append("선택과목 미검출/키없음")
+            # 정답키가 아예 없는 시험(공개 전)이면 전 페이지 공통 상황이라 경고 생략
+            if keys:
+                warns.append("선택과목 미검출/키없음")
+            elif not res["subject"]:
+                warns.append("선택과목 미검출")
         nblank = sum(1 for q in range(1, 31) if row["answers"].get(q, 0) == 0)
         ndup = sum(1 for v in row["answers"].values() if v == -1)
         if nblank >= 8:

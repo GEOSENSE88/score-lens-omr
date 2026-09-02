@@ -75,13 +75,12 @@ def ensure_key(keys_dir: Path, exam_id: str | None, code: int) -> dict | None:
     key = load_key(keys_dir, exam_id, subject)
     if key or not exam_id:
         return key
-    # 자동 다운로드는 CODE_INFO 의 paper_id 가 고정된 회차(6월)만 안전함
+    # 자동 다운로드는 CODE_INFO 의 paper_id 가 고정된 회차(6월)만 안전함.
+    # 다른 회차의 키 부재는 시험 당일 등 정상 상황 — 죽지 말고 판독표만 생성.
     if str(exam_id) != CODE_INFO_EXAM_ID:
-        raise SystemExit(
-            f"[정답키 없음] {subject} — 자동 다운로드는 6월 회차({CODE_INFO_EXAM_ID}) paper_id 에 "
-            f"고정되어 있습니다. 요청 회차({exam_id})를 채점하려면 CODE_INFO 의 paper_id 를 "
-            "새 회차로 갱신하거나 키 JSON 을 keys/ 에 수동으로 준비하세요."
-        )
+        print(f"[정답키 없음] {subject}({exam_id}) — 채점 없이 판독표만 생성합니다 "
+              "(EBSi 정답 등록 후 재실행 시 채점).")
+        return None
     ebsi_xip_keys.write_key(str(exam_id), subject, paper_id, keys_dir)
     return load_key(keys_dir, exam_id, subject)
 
