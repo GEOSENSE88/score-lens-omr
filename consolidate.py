@@ -101,6 +101,23 @@ def _std_ident(row):
     return dict(반=row.get("반", ""), 번호=row.get("번호", ""), 이름=row.get("성명", ""))
 
 
+def _row_stu_answers(row, limit=60):
+    """CSV 행의 문항 컬럼('1'..'60')에서 학생답 추출 — 정답키가 없는 시험
+    (정답 공개 전)에서도 검토 UI 에 학생 답안을 보여주기 위한 폴백."""
+    out = {}
+    for q in range(1, limit + 1):
+        v = row.get(str(q))
+        s = str(v).strip() if v is not None else ""
+        if s and s.lstrip("-").isdigit():
+            out[q] = int(s)
+    return out
+
+
+def _jeongo_questions(ans, row):
+    """정오 dict 를 만들 문항 목록 — 키가 있으면 키 기준, 없으면 CSV 학생답 기준."""
+    return sorted(ans) if ans else sorted(_row_stu_answers(row))
+
+
 def consolidate(args) -> list[dict]:
     keys_dir = Path(args.keys_dir)
     exam_id = getattr(args, "exam_id", None)
@@ -123,20 +140,24 @@ def consolidate(args) -> list[dict]:
 
     def parse_pandokpyo(row, subject, elective=None):
         """판독표 포맷(점수/만점/문항별 학생답) → (선택, 공통원, 선택원, 원점수, 만점, 정오).
-        고1·2 국어/수학 등 선택과목 없는 양식: 전 문항을 '공통'으로 본다."""
+        고1·2 국어/수학 등 선택과목 없는 양식: 전 문항을 '공통'으로 본다.
+        정답키가 없으면(공개 전) 학생답만 정오에 담고 점수는 공란."""
         ans, pts = _load_key_points(keys_dir, subject, elective, exam_id)
         jeongo, total = {}, 0.0
-        for q in sorted(ans):
+        for q in _jeongo_questions(ans, row):
             stu = row.get(str(q))
             stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
-            ok = stu == ans[q]
-            jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": ok}
+            ok = stu == ans[q] if q in ans else False
+            jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pts.get(q, 0), "ok": ok}
             if ok:
                 total += pts.get(q, 0)
         score = row.get("점수")
-        score = _clean_num(score) if str(score).replace(".", "").isdigit() else _clean_num(total)
+        if str(score).replace(".", "").isdigit():
+            score = _clean_num(score)
+        else:
+            score = _clean_num(total) if ans else ""
         return dict(선택=subject, 공통원=score, 선택원="", 원점수=score,
-                    만점=_clean_num(row.get("만점") or 100), 정오=jeongo,
+                    만점=_clean_num(row.get("만점") or 100) if ans else "", 정오=jeongo,
                     확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
 
     # ── 국어: 점수표(고3, 원점수+선택과목) 또는 판독표(고1·2) 자동 감지
@@ -148,8 +169,9 @@ def consolidate(args) -> list[dict]:
             ans, pts = _load_key_points(keys_dir, "국어", elective, exam_id)
             wrong = set(_ints(row.get("틀린문항"))) | set(_ints(row.get("미마킹"))) | set(_ints(row.get("중복마킹")))
             jeongo, gong, sun = {}, 0, 0
-            for q, pt in pts.items():
-                ok = q not in wrong
+            for q in (sorted(pts) if pts else sorted(_row_stu_answers(row))):
+                pt = pts.get(q, 0)
+                ok = (q not in wrong) if pts else False
                 stu = row.get(str(q))              # 점수표 CSV의 문항별 학생답(있으면)
                 stu = int(stu) if str(stu).lstrip("-").isdigit() else ""
                 jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pt, "ok": ok}
@@ -159,7 +181,8 @@ def consolidate(args) -> list[dict]:
                     else:
                         sun += pt
             s["국어"] = dict(선택=elective, 공통원=gong or "", 선택원=sun or "",
-                            원점수=int(row.get("원점수") or 0), 만점=int(row.get("만점") or 100),
+                            원점수=int(row.get("원점수") or 0) if pts else "",
+                            만점=int(row.get("만점") or 100) if pts else "",
                             정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
         else:                                     # 고1·2 판독표 포맷
             s["국어"] = parse_pandokpyo(row, "국어")
@@ -173,8 +196,9 @@ def consolidate(args) -> list[dict]:
             ans, pts = _load_key_points(keys_dir, "수학", elective, exam_id)
             wrong = set(_ints(row.get("틀린문항")))
             jeongo, gong, sun = {}, 0, 0
-            for q, pt in pts.items():
-                ok = q not in wrong
+            for q in (sorted(pts) if pts else sorted(_row_stu_answers(row))):
+                pt = pts.get(q, 0)
+                ok = (q not in wrong) if pts else False
                 stu = row.get(str(q))              # 점수표 CSV의 문항별 학생답(있으면)
                 stu = int(stu) if str(stu).lstrip("-").isdigit() else ""
                 jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pt, "ok": ok}
@@ -184,7 +208,8 @@ def consolidate(args) -> list[dict]:
                     else:
                         sun += pt
             s["수학"] = dict(선택=elective, 공통원=gong or "", 선택원=sun or "",
-                            원점수=int(row.get("원점수") or 0), 만점=int(row.get("만점") or 100),
+                            원점수=int(row.get("원점수") or 0) if pts else "",
+                            만점=int(row.get("만점") or 100) if pts else "",
                             정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
         else:                                     # 고1·2 판독표 포맷
             s["수학"] = parse_pandokpyo(row, "수학")
@@ -196,11 +221,14 @@ def consolidate(args) -> list[dict]:
         ans, pts = _load_key_points(keys_dir, "영어", None, exam_id)
         score_col = row.get("부분점수") or row.get("점수") or 0
         jeongo = {}
-        for q in sorted(ans):
+        for q in _jeongo_questions(ans, row):
             stu = row.get(str(q))
             stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
-            jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": stu == ans[q]}
-        s["영어"] = dict(원점수=_num_score(score_col), 만점=_num_score(row.get("부분만점") or row.get("만점"), 100), 정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
+            jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pts.get(q, 0),
+                         "ok": stu == ans[q] if q in ans else False}
+        s["영어"] = dict(원점수=_num_score(score_col) if ans else "",
+                        만점=_num_score(row.get("부분만점") or row.get("만점"), 100) if ans else "",
+                        정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
 
     # ── 한국사 (판독표)
     for row in _read_csv(args.history):
@@ -208,11 +236,14 @@ def consolidate(args) -> list[dict]:
         s = get_student(ident)
         ans, pts = _load_key_points(keys_dir, "한국사", None, exam_id)
         jeongo = {}
-        for q in sorted(ans):
+        for q in _jeongo_questions(ans, row):
             stu = row.get(str(q))
             stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
-            jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": stu == ans[q]}
-        s["한국사"] = dict(원점수=_num_score(row.get("점수")), 만점=_num_score(row.get("만점"), 50), 정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
+            jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pts.get(q, 0),
+                         "ok": stu == ans[q] if q in ans else False}
+        s["한국사"] = dict(원점수=_num_score(row.get("점수")) if ans else "",
+                          만점=_num_score(row.get("만점"), 50) if ans else "",
+                          정오=jeongo, 확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
 
     # ── 탐구 (판독표): 제1·제2 선택
     for row in _read_csv(args.explore):
@@ -224,13 +255,19 @@ def consolidate(args) -> list[dict]:
             if not subj:
                 continue
             ans, pts = _load_key_points(keys_dir, subj, None, exam_id)
+            qs = sorted(ans) if ans else sorted(
+                q for q in range(1, 21)
+                if str(row.get(f"{pre}_{q}", "")).strip().lstrip("-").isdigit())
             jeongo = {}
-            for q in sorted(ans):
+            for q in qs:
                 stu = row.get(f"{pre}_{q}")
                 stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
-                jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": stu == ans[q]}
-            tam.append(dict(과목=subj, 원점수=_num_score(row.get(f"{pre}점수")),
-                            만점=_num_score(row.get(f"{pre}만점"), 50), 정오=jeongo,
+                jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pts.get(q, 0),
+                             "ok": stu == ans[q] if q in ans else False}
+            tam.append(dict(과목=subj,
+                            원점수=_num_score(row.get(f"{pre}점수")) if ans else "",
+                            만점=_num_score(row.get(f"{pre}만점"), 50) if ans else "",
+                            정오=jeongo,
                             확인=row.get("확인필요", ""), 페이지=row.get("페이지", "")))
         if tam:
             s["탐구"] = tam
@@ -330,6 +367,7 @@ def regrade_student_subject(s: dict, subject: str, exam_id, keys_dir):
     if not d:
         return
     jeongo = d.get("정오", {})
+    has_key = any(cell.get("정답") is not None for cell in jeongo.values())
     total = 0.0
     gong = sun = 0.0
     for q, cell in jeongo.items():
@@ -347,11 +385,13 @@ def regrade_student_subject(s: dict, subject: str, exam_id, keys_dir):
                 sun += pt if int(q) > 22 else 0
     def _clean(v):
         return int(v) if float(v).is_integer() else round(v, 1)
-    d["원점수"] = _clean(total)
+    # 정답 공개 전(전 셀 정답 None) — 수정해도 점수는 공란 유지
+    d["원점수"] = _clean(total) if has_key else ""
     if subject in ("국어", "수학"):
         d["공통원"] = _clean(gong) if gong else ""
         d["선택원"] = _clean(sun) if sun else ""
     # 예상등급 갱신
+    import mimac_cuts as mimac        # 함수 지역 import (모듈 상단에 없음)
     cuts = gc.load_grade_cuts(exam_id, keys_dir) if exam_id else {}
     est = gc.estimate(gc.find_subject_cut(cuts, subject), d.get("원점수"))
     등급, 표점, 백분위 = est["등급"], est["표준점수"], est["백분위"]
@@ -440,12 +480,14 @@ def _merge_integrated(args, students):
             s = find_or_create(ident)
             ans, pts = _load_key_points(keys_dir, subject, None, exam_id)
             jeongo = {}
-            for q in sorted(ans):
+            for q in _jeongo_questions(ans, row):
                 stu = row.get(str(q))
                 stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
-                jeongo[q] = {"답": stu, "정답": ans[q], "배점": pts.get(q, 0), "ok": stu == ans[q]}
-            entry = dict(과목=subject, 원점수=_num_score(row.get("점수") or row.get("원점수")),
-                         만점=_num_score(row.get("만점"), 100), 정오=jeongo)
+                jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pts.get(q, 0),
+                             "ok": stu == ans[q] if q in ans else False}
+            entry = dict(과목=subject,
+                         원점수=_num_score(row.get("점수") or row.get("원점수")) if ans else "",
+                         만점=_num_score(row.get("만점"), 100) if ans else "", 정오=jeongo)
             s.setdefault("탐구", [None, None])
             while len(s["탐구"]) < 2:
                 s["탐구"].append(None)

@@ -389,6 +389,8 @@
   .rv-q.wrong .qa{color:var(--danger)}
   .rv-q.blank{background:#F1F4F6}
   .rv-q.blank .qa{color:#9AA7B0}
+  .rv-q.pending{background:#fff}          /* 정답 공개 전 — 학생답만 중립 표시 */
+  .rv-q.pending .qa{color:var(--ink)}
   .rv-q .qc{display:block;font-size:9px;color:#9AA7B0;line-height:1.2;min-height:11px}
   .rv-q.wrong .qc{color:var(--danger)}
   .rv-q select{

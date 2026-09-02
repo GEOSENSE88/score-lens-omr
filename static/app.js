@@ -462,15 +462,21 @@ function rowHtml(s, idx){
     <td>${stt.html}</td>
     <td style="text-align:right;white-space:nowrap">${cardBtn}<button class="rv-toggle ${open?'open':''}" data-idx="${idx}">답안 ${open?'닫기':'보기·수정'}</button></td>
   </tr>`;
-  if (open) html += `<tr class="rv-detail"><td colspan="5"><div class="rv-detail-inner">
-      <div class="rv-legend">
-        <span><i class="rv-swatch" style="background:var(--success-soft);border:1px solid #B6E6D4"></i>정답</span>
-        <span><i class="rv-swatch" style="background:var(--danger-soft);border:1px solid #F2C5C4"></i>오답(작은 숫자=정답)</span>
-        <span><i class="rv-swatch" style="background:#F1F4F6"></i>미마킹</span>
-        <span>큰 숫자 = 학생이 마킹한 답 · 눌러서 수정</span>
-      </div>
+  if (open){
+    const noKey = d.cells.length > 0 &&
+      d.cells.every(c => c.정답 === null || c.정답 === undefined);
+    const legend = noKey
+      ? `<span>📋 <b>정답 공개 전</b> — 학생이 마킹한 답만 표시합니다. 정답 등록 후 채점하면 정답·오답이 색으로 표시됩니다.</span>
+         <span>눌러서 수정 가능</span>`
+      : `<span><i class="rv-swatch" style="background:var(--success-soft);border:1px solid #B6E6D4"></i>정답</span>
+         <span><i class="rv-swatch" style="background:var(--danger-soft);border:1px solid #F2C5C4"></i>오답(작은 숫자=정답)</span>
+         <span><i class="rv-swatch" style="background:#F1F4F6"></i>미마킹</span>
+         <span>큰 숫자 = 학생이 마킹한 답 · 눌러서 수정</span>`;
+    html += `<tr class="rv-detail"><td colspan="5"><div class="rv-detail-inner">
+      <div class="rv-legend">${legend}</div>
       <div class="rv-grid">${d.cells.map(c => qHtml(idx, c)).join("")}</div>
     </div></td></tr>`;
+  }
   return html;
 }
 
@@ -481,9 +487,11 @@ function isShortAns(q){
 
 function qHtml(idx, c){
   const a = c.답;
-  const cls = c.ok ? "ok" : (a === 0 || a === -1 ? "blank" : "wrong");
+  const noKey = c.정답 === null || c.정답 === undefined;   // 정답 공개 전 — 판독표만
+  const cls = noKey ? (a === 0 || a === -1 ? "blank" : "pending")
+                    : (c.ok ? "ok" : (a === 0 || a === -1 ? "blank" : "wrong"));
   const shown = ANS_LABEL[a] !== undefined ? ANS_LABEL[a] : (a ?? "·");
-  const corr = !c.ok ? `<span class="qc">${c.정답 ?? ""}</span>` : `<span class="qc"></span>`;
+  const corr = (!c.ok && !noKey) ? `<span class="qc">${c.정답 ?? ""}</span>` : `<span class="qc"></span>`;
   if (isShortAns(c.q))
     return `<div class="rv-q ${cls} sa" data-idx="${idx}" data-q="${c.q}" title="눌러서 0~999 직접 입력">
       <span class="qn">${c.q}</span><span class="qa">${shown}</span>${corr}
