@@ -135,7 +135,19 @@ def main() -> int:
         i = pi + 1
         img = oc.load_page(raw)          # auto_orient 적용 (경로 로드와 동일 불변식)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        res = oc.process_page(img, template)
+        try:
+            res = oc.process_page(img, template)
+        except Exception as exc:
+            # 카드 서식이 다르거나 훼손된 페이지 — 전체 작업을 죽이지 말고
+            # 해당 페이지만 판독실패로 표시한다(다른 서식 카드 혼입 실사례).
+            row = dict(page=i, name="", school="?", ban="??", beon="??",
+                       elective=None, score=None, max_score=100, correct_count=0,
+                       wrong=[], blank=[], dup=[], per_q={},
+                       warn=f"판독실패({type(exc).__name__}) — 카드 서식·스캔 확인")
+            rows.append(row)
+            flagged.append((i, [row["warn"]]))
+            print(f"  p{i:>3}: ⚠️ 판독실패 — {exc}")
+            continue
         name = nr.read_name(gray)
         sid = idr.read_id(gray)
         elective = normalize_elective(res["subject"])
