@@ -134,6 +134,18 @@ def normalize_scan(img: np.ndarray) -> tuple[np.ndarray, bool]:
     return img, is_gray
 
 
+PROF_SMOOTH_SIGMA = 10.0   # 프로파일 비교 전 가우시안 평활(px)
+
+
+def _smooth_profile(p: np.ndarray) -> np.ndarray:
+    """x-프로파일 평활 — 저해상(150dpi) 스캔은 확대 렌더에서 가는 표선·글자가
+    뭉개져 원시 프로파일 상관이 0.2 이하로 무너진다(2026-09 고1 7반·8반 실사례:
+    정상 0.81 vs 저해상 0.18). σ=10 평활 후엔 저해상 0.76~0.86/마진≥0.19,
+    정상 0.92+/마진≥0.32 로 양쪽 모두 판별 가능(격자주기 60px 대비 충분히 좁음)."""
+    p = np.asarray(p, dtype=np.float32).reshape(1, -1)
+    return cv2.GaussianBlur(p, (0, 0), PROF_SMOOTH_SIGMA).ravel()
+
+
 def _shift_corr(a: np.ndarray, b: np.ndarray, s: int) -> float:
     """b 를 s 만큼 민 것과 a 의 상관 (a[x] ≈ b[x-s] 가정 검증)."""
     n = min(len(a), len(b))
@@ -167,8 +179,8 @@ def rectify_verified(img: np.ndarray, tmpl: dict) -> tuple[np.ndarray, dict]:
     out, info = hp_align.rectify(img, tmpl["marks"])
     info["gray_scan"] = is_gray
     pitch = float(np.median(np.diff(tmpl["marks"]["xs"])))
-    refp = np.asarray(tmpl["xprofile"], dtype=np.float32)
-    prof = x_profile(out)
+    refp = _smooth_profile(np.asarray(tmpl["xprofile"], dtype=np.float32))
+    prof = _smooth_profile(x_profile(out))
     # 페이지가 k·pitch 만큼 밀렸다면 prof[x] ≈ refp[x - k·pitch]
     scores = {k: _shift_corr(prof, refp, int(round(k * pitch)))
               for k in (-2, -1, 0, 1, 2)}
@@ -233,11 +245,23 @@ def _id_readback_pick(img: np.ndarray, tmpl: dict, pitch: float,
             ok = rid.get("school") == SCHOOL_CODE
         elif ncols == 9:
             ok = rid.get("school") == SCHOOL_CODE % 10000
-            # 급지 밀림 스캔은 좌측(학교번호) 열이 화면 밖 — 학교가 통째로
-            # 안 읽히면 반·번호 완전 판독을 차선 증거로(전 후보 중 유일할 때만).
-            if not ok and rid.get("school") is None \
-                    and rid.get("ban") is not None and rid.get("num") is not None:
-                partial_hits.append(k)
+            if not ok:
+                # 학교번호 4자리 중 3자리가 맞고 나머지가 미판독(연한 마킹)이면
+                # 차선 증거 — 2026-09 고1 영어 실사례(학교열만 연하게 칠한 학생
+                # 다수가 '격자 검증 모호' 정렬실패로 탈락). 모순 자리(다른 숫자
+                # 판독)가 하나라도 있으면 인정하지 않는다.
+                want = [int(c) for c in f"{SCHOOL_CODE % 10000:04d}"]
+                got = list(rid.get("raw") or [])[:4]
+                agree = sum(1 for a, b in zip(got, want) if a == b)
+                contra = sum(1 for a, b in zip(got, want)
+                             if a is not None and a != -1 and a != b)
+                if agree >= 3 and contra == 0:
+                    partial_hits.append(k)
+                # 급지 밀림 스캔은 좌측(학교번호) 열이 화면 밖 — 학교가 통째로
+                # 안 읽히면 반·번호 완전 판독을 차선 증거로(전 후보 중 유일할 때만).
+                elif rid.get("school") is None \
+                        and rid.get("ban") is not None and rid.get("num") is not None:
+                    partial_hits.append(k)
         else:
             ok = (rid.get("grade") == 3 and rid.get("ban") is not None
                   and rid.get("num") is not None)

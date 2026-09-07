@@ -168,15 +168,36 @@ def load_keys_tolerant(keys_dir: Path, exam: str) -> dict:
 
 
 def _load_names(path: Path | None) -> dict:
+    """명단 CSV → {(반, 번호): 성명}. 교사가 엑셀로 만든 파일은 cp949 인코딩
+    이거나 행 전체가 따옴표로 감싸진 형태("1,1,홍길동")로 오기도 한다
+    (2026-09 고1 실사례 — utf-8 고정 읽기가 예외로 죽어 명단 없이 진행됐음)."""
     if not path or not path.exists():
         return {}
+    raw = path.read_bytes()
+    text = None
+    for enc in ("utf-8-sig", "cp949", "euc-kr"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        return {}
+    lines = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if len(s) >= 2 and s[0] == '"' and s[-1] == '"' and '","' not in s:
+            s = s[1:-1]          # 행 전체를 감싼 따옴표 해제
+        if s:
+            lines.append(s)
     out = {}
-    with open(path, encoding="utf-8-sig") as f:
-        for row in csv.DictReader(f):
-            ban = str(row.get("반", "")).strip().lstrip("0")
-            num = str(row.get("번호", "")).strip().lstrip("0")
-            if ban and num:
-                out[(ban, num)] = str(row.get("성명", "")).strip()
+    for row in csv.DictReader(lines):
+        row = {str(k or "").strip(): v for k, v in row.items()}
+        ban = str(row.get("반", "")).strip().lstrip("0")
+        num = str(row.get("번호", "")).strip().lstrip("0")
+        name = str(row.get("성명") or row.get("이름") or "").strip()
+        if ban and num and name:
+            out[(ban, num)] = name
     return out
 
 
