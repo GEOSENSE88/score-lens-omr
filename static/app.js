@@ -332,6 +332,7 @@ function onScanDone(j){
     return;
   }
   $("#scanHint").textContent = "판독 완료 — 아래에서 검토하세요";
+  ORIGIN = null;                       // 새 판독은 새 보관 항목으로
   if (j.run_id) loadReview(j.run_id);
 }
 
@@ -371,6 +372,8 @@ async function loadReview(runId){
     $("#reviewSlot").style.display = "block";
     $("#panel-grade").style.display = "block";     // STEP 4 노출
     $("#panel-scan").scrollIntoView({behavior:"smooth"});
+    saveRunLocal();                                 // 브라우저 사본 (서버 만료 대비)
+    if (!(SCAN_JOB && SCAN_JOB.restored)) prefetchCards();
   }catch(e){ $("#reviewSlot").style.display = "none"; }
 }
 
@@ -552,6 +555,7 @@ async function postEdit(payload){
   if (!r.ok){ showAlert(r.message || "수정에 실패했습니다."); return null; }
   RESULT.students[payload.idx] = r.student;
   $("#rvStale").classList.add("show");
+  scheduleSaveRunLocal();
   return r.student;
 }
 
@@ -597,16 +601,195 @@ function ensureCardModal(){
   return ov;
 }
 
-function showCard(subjLabel, page){
+async function showCard(subjLabel, page){
   if (!RUN_ID || !page) return;
   const key = SUBJ_KEY[subjLabel] || "explore";   // 탐구 과목명 탭 → explore 카드
   const ov = ensureCardModal();
   ov.querySelector(".cm-title").textContent = `${subjLabel} 답안지 ${page}쪽 — 스캔 원본`;
   const img = ov.querySelector("img");
   img.classList.remove("zoom");
-  img.src = `/review_img/${RUN_ID}/${key}/${page}`;
+  img.removeAttribute("src");
   ov.style.display = "flex";
+  // 1) 서버 이미지 → 2) 브라우저 보관본(IndexedDB) → 3) 안내
+  const url = `/review_img/${RUN_ID}/${key}/${page}`;
+  let blob = null;
+  try{
+    const res = await fetch(url);
+    if (res.ok){ blob = await res.blob(); LocalStore.putCard(cardKey(key, page), blob).catch(()=>{}); }
+  }catch(e){ /* 서버 불가 */ }
+  if (!blob) blob = await LocalStore.getCard(cardKey(key, page)).catch(() => null);
+  if (blob){ img.src = URL.createObjectURL(blob); }
+  else ov.querySelector(".cm-title").textContent =
+    "이미지를 찾을 수 없습니다 — 서버에서 만료됐고 브라우저에도 저장되지 않은 쪽입니다";
 }
+
+
+/* ── 브라우저 보관(IndexedDB): 판독 결과 사본 + 확인필요 카드 이미지 ──
+   서버는 TTL·재시작·다운로드 후 삭제로 결과를 잃지만, 이 브라우저에 남긴 사본으로
+   언제든 복원(/api/result/restore)해 검토·수정·다운로드를 이어간다. */
+const LocalStore = (() => {
+  const NAME = "omrlens", VER = 1;
+  let dbp = null;
+  function open(){
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      if (!window.indexedDB){ rej(new Error("no idb")); return; }
+      const rq = indexedDB.open(NAME, VER);
+      rq.onupgradeneeded = () => {
+        const db = rq.result;
+        if (!db.objectStoreNames.contains("runs")) db.createObjectStore("runs", {keyPath:"origin"});
+        if (!db.objectStoreNames.contains("cards")) db.createObjectStore("cards");
+      };
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+    });
+    return dbp;
+  }
+  function tx(store, mode, fn){
+    return open().then(db => new Promise((res, rej) => {
+      const t = db.transaction(store, mode), st = t.objectStore(store);
+      const out = fn(st);
+      t.oncomplete = () => res(out && out.result !== undefined ? out.result : undefined);
+      t.onerror = () => rej(t.error);
+    }));
+  }
+  return {
+    putRun: rec => tx("runs", "readwrite", st => st.put(rec)),
+    getRun: origin => tx("runs", "readonly", st => st.get(origin)),
+    delRun: origin => tx("runs", "readwrite", st => st.delete(origin)),
+    listRuns: () => tx("runs", "readonly", st => st.getAll()),
+    putCard: (k, blob) => tx("cards", "readwrite", st => st.put(blob, k)),
+    getCard: k => tx("cards", "readonly", st => st.get(k)),
+    delCards: origin => tx("cards", "readwrite", st => {
+      const rq = st.openCursor();
+      rq.onsuccess = () => { const c = rq.result; if (!c) return;
+        if (String(c.key).startsWith(origin + "/")) c.delete(); c.continue(); };
+      return null;
+    }),
+  };
+})();
+
+let ORIGIN = null;            // 브라우저 보관 키(최초 판독 run_id) — 복원해도 유지
+const cardKey = (key, page) => `${ORIGIN || RUN_ID}/${key}/${page}`;
+let saveTimer = null;
+function scheduleSaveRunLocal(){ clearTimeout(saveTimer); saveTimer = setTimeout(saveRunLocal, 1500); }
+
+async function saveRunLocal(){
+  if (!RUN_ID) return;
+  try{
+    const ex = await (await fetch(`/api/result/${RUN_ID}/export`)).json();
+    if (!ex.ok) return;
+    ORIGIN = ORIGIN || RUN_ID;
+    const sel = $("#exam_select");
+    const prev = await LocalStore.getRun(ORIGIN).catch(() => null);
+    const examLabel = (prev && prev.exam_label) ||
+      (sel && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.split(" · ")[0] : "") || "";
+    await LocalStore.putRun({
+      origin: ORIGIN, exam_label: examLabel, grade: ex.grade, exam_id: ex.exam_id,
+      exam_year: ex.exam_year, students: ex.students, n: ex.students.length,
+      created_at: (prev && prev.created_at) || Date.now(), saved_at: Date.now(),
+      cards: (prev && prev.cards) || 0,
+    });
+    renderSavedRuns();
+  }catch(e){ /* 저장 실패는 조용히 — 서버 흐름엔 영향 없음 */ }
+}
+
+/* 확인필요 행(+미마킹·중복 행)의 카드 이미지를 미리 받아 둔다 — 서버 만료 대비.
+   전 페이지(수백 MB)는 과하므로 검토가 필요한 쪽만, 최대 CARD_CAP 장. */
+const CARD_CAP = 400;
+async function prefetchCards(){
+  if (!RESULT || !RUN_ID) return;
+  const want = [];
+  const seen = new Set();
+  RESULT.students.forEach(s => {
+    const all = Object.entries(s.subjects || {})
+      .concat((s.탐구 || []).map(t => [t.과목, t]));
+    all.forEach(([label, d]) => {
+      if (!d || !d.페이지) return;
+      const st = readStatus(d);
+      const need = st.flag || /warn/.test(st.html);
+      const key = SUBJ_KEY[label] || "explore";
+      const k = cardKey(key, d.페이지);
+      if (need && !seen.has(k)){ seen.add(k); want.push([k, `/review_img/${RUN_ID}/${key}/${d.페이지}`]); }
+    });
+  });
+  let done = 0;
+  for (const [k, url] of want.slice(0, CARD_CAP)){
+    try{
+      if (await LocalStore.getCard(k)) { done++; continue; }
+      const res = await fetch(url);
+      if (res.ok){ await LocalStore.putCard(k, await res.blob()); done++; }
+    }catch(e){ /* skip */ }
+  }
+  try{
+    const rec = await LocalStore.getRun(ORIGIN || RUN_ID);
+    if (rec){ rec.cards = done; await LocalStore.putRun(rec); renderSavedRuns(); }
+  }catch(e){}
+}
+
+function fmtWhen(ts){
+  const d = new Date(ts);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+
+async function renderSavedRuns(){
+  const panel = $("#panel-saved"), list = $("#savedList");
+  if (!panel || !list) return;
+  let runs = [];
+  try{ runs = await LocalStore.listRuns(); }catch(e){ runs = []; }
+  runs.sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
+  if (!runs.length){ panel.style.display = "none"; return; }
+  panel.style.display = "block";
+  list.innerHTML = runs.map(r => `
+    <div class="saved-item" data-origin="${esc(r.origin)}">
+      <div class="ic">고${r.grade}</div>
+      <div>
+        <div class="nm">${esc(r.exam_label || (r.exam_id ? "시험 " + r.exam_id : "시험 미지정"))} · 학생 ${r.n}명</div>
+        <div class="ds">판독 ${fmtWhen(r.created_at)} · 마지막 저장 ${fmtWhen(r.saved_at)} · 보관 카드 이미지 ${r.cards || 0}장${ORIGIN === r.origin ? " · <b>현재 열림</b>" : ""}</div>
+      </div>
+      <div class="sp"></div>
+      <button type="button" class="pri" data-act="load" ${ORIGIN === r.origin ? "disabled" : ""}>불러오기</button>
+      <button type="button" data-act="del">삭제</button>
+    </div>`).join("") +
+    `<div class="saved-note">💡 결과는 이 PC의 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우면 함께 사라지니 통합성적표 엑셀은 꼭 내려받아 두세요.</div>`;
+  $$("#savedList .saved-item button").forEach(b => b.addEventListener("click", async () => {
+    const origin = b.closest(".saved-item").dataset.origin;
+    if (b.dataset.act === "del"){
+      if (!confirm("이 브라우저에 보관된 판독 결과를 삭제할까요? (서버와 무관, 되돌릴 수 없음)")) return;
+      await LocalStore.delRun(origin).catch(()=>{});
+      await LocalStore.delCards(origin).catch(()=>{});
+      if (ORIGIN === origin) ORIGIN = null;
+      renderSavedRuns();
+      return;
+    }
+    b.disabled = true; b.textContent = "복원 중…";
+    try{ await restoreRun(origin); }
+    finally{ b.disabled = false; b.textContent = "불러오기"; }
+  }));
+}
+
+async function restoreRun(origin){
+  const rec = await LocalStore.getRun(origin);
+  if (!rec){ showAlert("보관된 결과를 찾을 수 없습니다."); return; }
+  const r = await (await fetch("/api/result/restore", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({grade: rec.grade, exam_id: rec.exam_id, exam_year: rec.exam_year, students: rec.students}),
+  })).json();
+  if (!r.ok){ showAlert(r.message || "복원에 실패했습니다."); return; }
+  ORIGIN = origin;
+  SCAN_JOB = r.job;
+  GRADED = false;
+  $("#gradeMsg").innerHTML = "위 판독 결과를 확인·수정한 뒤 채점하면 원점수·예상등급이 산출됩니다.";
+  $("#btnGrade").textContent = "채점하기";
+  $("#summarySlot").style.display = "none";
+  $("#panel-result").style.display = "none";
+  $("#panel-scan").style.display = "block";
+  renderProgress(r.job);
+  $("#scanHint").textContent = "브라우저 보관 결과 복원됨 — 아래에서 검토하세요";
+  await loadReview(r.run_id);
+}
+
+document.addEventListener("DOMContentLoaded", renderSavedRuns);
 
 $("#rvSearch").addEventListener("input", () => renderTable());
 

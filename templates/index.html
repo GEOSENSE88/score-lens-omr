@@ -99,6 +99,15 @@
     </div>
   </form>
 
+  <!-- 이 브라우저에 보관된 이전 판독 결과 (서버 만료와 무관) -->
+  <section class="card saved-runs" id="panel-saved" style="display:none">
+    <div class="step-head">
+      <div class="step-num" style="background:var(--muted,#6b7a8a)">💾</div>
+      <h2>이 브라우저에 보관된 판독 결과</h2>
+      <span class="hint">서버 결과가 만료돼도 여기서 불러와 검토·수정·다운로드를 이어갈 수 있습니다 (이 PC·이 브라우저에만 저장)</span>
+    </div>
+    <div class="saved-list" id="savedList"></div>
+  </section>
   <!-- STEP 3: 답안지 스캔 · 오류 사항 검토 -->
   <section class="card" id="panel-scan">
     <div class="step-head">
@@ -157,7 +166,7 @@
     <b>OMR Lens</b> · 모의고사 OMR 스캔·채점 · <a href="/guide" style="font-weight:700">📖 사용 안내</a><br>
     표준점수·백분위·등급은 EBSi 예상 등급컷 기반 <b>추정치</b>입니다 (통합성적표의 '예상등급컷' 시트에 근거 수록).<br>
     공식 성적표를 대체하지 않으며, 고3 국어·수학은 EBSi 원점수 컷 비공개로 예상치가 제공되지 않습니다.<br>
-    <span class="ephemeral">🔒 업로드한 답안지는 채점 직후 삭제되고, <b>통합성적표를 내려받는 즉시 서버에서 완전히 삭제</b>됩니다. 남는 사본은 선생님이 내려받은 파일뿐이며, 본인이 올린 결과만 받을 수 있습니다.</span>
+    <span class="ephemeral">🔒 업로드한 답안지는 채점 직후 삭제되고, <b>통합성적표를 내려받는 즉시 서버에서 완전히 삭제</b>됩니다. 판독 결과와 확인필요 카드 이미지의 사본은 <b>선생님 브라우저 안(IndexedDB)</b>에만 남아, 서버 결과가 만료돼도 "이 브라우저에 보관된 판독 결과"에서 다시 불러올 수 있습니다.</span>
     <div class="credit">제작 · 산남고등학교 이성훈 · <a href="mailto:ming0987@naver.com">ming0987@naver.com</a></div>
   </footer>
 </div>

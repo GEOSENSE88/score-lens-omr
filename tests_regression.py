@@ -647,7 +647,6 @@ def t99_chunked_upload():
 def t10_web():
     print("[10] 웹 e2e (고1 6과목 → 통합성적표)")
     import requests
-    from synth_omr import make_students
     base = "http://127.0.0.1:5050"
     try:
         requests.get(base + "/api/exams", timeout=3)
@@ -670,21 +669,33 @@ def t10_web():
         if st["status"] in ("done", "error"):
             break
     check("웹 잡 완료", st["status"] == "done" and st.get("ok") is True)
-    import openpyxl, io
-    students = make_students(ROOT / "keys", "202606041", n=6, grade=1)
-    exp = {info["beon"]: e for info, _, e in students}
+    import openpyxl, io, json as _json
+    # 기대값은 t5 와 동일한 실물서식 픽스처 규칙(make_synth_g12: 객관식 (q+st)%5+1,
+    # 수학 단답 (q*7+st*13)%1000). 옛 가상카드 생성기(synth_omr.make_students)
+    # 기대값은 2026-09 픽스처 교체 후 맞지 않는다.
+    def _exp(subj, st):
+        k = _json.loads((ROOT / f"keys/202606041_{subj}_xip_api.json").read_text(encoding="utf-8"))
+        ans = {int(q): int(v) for q, v in k["answers"].items()}
+        pts = {int(q): float(v) for q, v in k["points"].items()}
+        sc = 0.0
+        for q in ans:
+            got = ((q * 7 + st * 13) % 1000 if subj == "수학" and q >= 22
+                   else (q + st) % 5 + 1)
+            if got == ans[q]:
+                sc += pts[q]
+        return round(sc, 1)
     rr = requests.get(f'{base}/download/{j["run_id"]}/통합성적표_고1.xlsx', timeout=10)
     ws = openpyxl.load_workbook(io.BytesIO(rr.content))["UNIV 1학년"]
     total = ok = 0
     colmap = dict(국어=6, 수학=10, 영어=14, 통합사회=18, 통합과학=22, 한국사=26)
     for row in range(3, ws.max_row + 1):
-        beon = str(ws.cell(row, 4).value or "")
-        if beon not in exp:
+        beon = str(ws.cell(row, 4).value or "").strip()
+        if not beon.isdigit() or not (1 <= int(beon) <= 6) or str(ws.cell(row, 3).value or "").strip() != "3":
             continue
         for subj, col in colmap.items():
             total += 1
             v = ws.cell(row, col).value
-            if v is not None and float(v) == float(exp[beon][subj]):
+            if v is not None and float(v) == _exp(subj, int(beon) - 1):
                 ok += 1
     check(f"통합성적표 대조 {ok}/{total}", total == 36 and ok == 36)
 

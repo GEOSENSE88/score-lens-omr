@@ -1061,6 +1061,60 @@ def api_result_edit(run_id: str):
     return jsonify(ok=True, student=_serialize_results(run_id)["students"][idx])
 
 
+# ── 브라우저 보관·복원: 결과가 서버에서 만료(TTL·재시작·다운로드 후 삭제)돼도
+#    선생님 브라우저(IndexedDB)에 남긴 사본으로 검토·수정·다운로드를 이어간다 ──
+@app.get("/api/result/<run_id>/export")
+def api_result_export(run_id: str):
+    """편집 가능한 원본 학생 레코드 전체 — 브라우저 로컬 보관용."""
+    r = RESULTS.get(run_id)
+    if not r:
+        return jsonify(ok=False, message="결과를 찾을 수 없습니다(만료되었을 수 있음)."), 404
+    return jsonify(ok=True, run_id=run_id, grade=r["grade"], exam_id=r.get("exam_id"),
+                   exam_year=r.get("exam_year"), students=r["students"],
+                   exported_at=datetime.now().isoformat(timespec="seconds"))
+
+
+@app.post("/api/result/restore")
+def api_result_restore():
+    """브라우저에 보관된 export 사본을 서버에 다시 올려 새 run 으로 되살린다.
+    (통합성적표를 다시 만들고, 수정·다운로드 API 가 그대로 동작한다.)"""
+    body = request.get_json(force=True, silent=True) or {}
+    students = body.get("students")
+    try:
+        grade = int(body.get("grade"))
+    except (TypeError, ValueError):
+        grade = 0
+    if grade not in (1, 2, 3) or not isinstance(students, list) \
+            or not all(isinstance(s, dict) for s in students) or not students:
+        return jsonify(ok=False, message="복원할 결과 형식이 올바르지 않습니다."), 400
+    exam_id = str(body.get("exam_id") or "") or None
+    if exam_id and not re.fullmatch(r"[0-9]{6,12}", exam_id):
+        return jsonify(ok=False, message="시험 ID 형식이 올바르지 않습니다."), 400
+    exam_year = str(body.get("exam_year") or "") or None
+    run_id = uuid.uuid4().hex[:12]
+    run_output_dir = WEB_OUTPUT_ROOT / run_id
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+    RESULTS[run_id] = dict(grade=grade, exam_id=exam_id, exam_year=exam_year,
+                           students=students,
+                           out=str(run_output_dir / f"통합성적표_고{grade}.xlsx"),
+                           stale=False)
+    try:
+        _rebuild_workbook(run_id)
+    except Exception as exc:
+        RESULTS.pop(run_id, None)
+        shutil.rmtree(run_output_dir, ignore_errors=True)
+        return jsonify(ok=False, message=f"복원 중 통합성적표 생성 실패: {exc}"), 400
+    now = datetime.now().strftime("%H:%M:%S")
+    JOBS[run_id] = dict(status="done", ok=True, run_id=run_id, grade=grade,
+                        total=1, completed=1, restored=True,
+                        message="브라우저에 보관된 결과를 복원했습니다.",
+                        events=[dict(t=now, kind="ok",
+                                     text="브라우저에 보관된 판독 결과를 복원했습니다 "
+                                          "(답안지 원본 이미지는 브라우저에 저장된 것만 볼 수 있습니다).")],
+                        downloads=collect_downloads(run_output_dir), runs=[])
+    return jsonify(ok=True, run_id=run_id, job=JOBS[run_id])
+
+
 @app.get("/review_img/<run_id>/<subject_key>/<int:page>")
 def review_img(run_id: str, subject_key: str, page: int):
     """확인필요 행의 실제 스캔 카드 이미지 — 검토 UI 의 '카드 보기'용.
