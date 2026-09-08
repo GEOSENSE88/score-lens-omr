@@ -526,9 +526,12 @@ def _merge_integrated(args, students):
                 stu = int(stu) if str(stu).lstrip("-").isdigit() else 0
                 jeongo[q] = {"답": stu, "정답": ans.get(q), "배점": pts.get(q, 0),
                              "ok": stu == ans[q] if q in ans else False}
+            # 확인·페이지를 함께 실어야 검토 UI 에서 확인필요 표시·'카드 보기'가 뜬다
+            # (다른 과목과 동일 — 통합과목만 빠져 있어 카드 보기 버튼이 없던 문제)
             entry = dict(과목=subject,
                          원점수=_num_score(row.get("점수") or row.get("원점수")) if ans else "",
-                         만점=_num_score(row.get("만점"), 100) if ans else "", 정오=jeongo)
+                         만점=_num_score(row.get("만점"), 100) if ans else "", 정오=jeongo,
+                         확인=row.get("확인필요", ""), 페이지=row.get("페이지", ""))
             s.setdefault("탐구", [None, None])
             while len(s["탐구"]) < 2:
                 s["탐구"].append(None)

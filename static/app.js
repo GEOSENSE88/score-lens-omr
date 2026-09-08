@@ -374,13 +374,20 @@ async function loadReview(runId){
   }catch(e){ $("#reviewSlot").style.display = "none"; }
 }
 
+// 탐구 탭 순서: 고1·2 통합과목은 사회→과학 고정, 그 외(고3 선택과목)는 등장 순
+const TAMGU_ORDER = ["통합사회", "통합과학"];
+
 function tabList(){
   const tabs = RESULT.subjects.slice();
   if (RESULT.has_tamgu){
     const seen = new Set();
+    const extra = [];
     RESULT.students.forEach(s => (s.탐구||[]).forEach(t => {
-      if (t.과목 && !tabs.includes(t.과목) && !seen.has(t.과목)){ seen.add(t.과목); tabs.push(t.과목); }
+      if (t.과목 && !tabs.includes(t.과목) && !seen.has(t.과목)){ seen.add(t.과목); extra.push(t.과목); }
     }));
+    const rank = t => { const i = TAMGU_ORDER.indexOf(t); return i < 0 ? TAMGU_ORDER.length : i; };
+    extra.sort((a, b) => rank(a) - rank(b));   // 안정 정렬 — 나머지는 등장 순 유지
+    tabs.push(...extra);
   }
   return tabs;
 }
