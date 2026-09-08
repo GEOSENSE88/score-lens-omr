@@ -12,7 +12,7 @@
     OMR_BEHIND_PROXY=1   nginx 등 리버스 프록시 뒤 — 실제 클라이언트 IP 사용,
                          localhost 무인증 면제 해제(전원 접속코드 필요), 보안쿠키
     OMR_ACCESS_CODE=...  접속 코드 지정(미지정 시 access_code.txt 자동생성)
-    OMR_DATA_TTL_MIN=60  업로드·결과 파일 보존 시간(분). 지나면 자동 삭제(0=끄기)
+    OMR_DATA_TTL_MIN=360 결과 파일 보존 시간(분, 마지막 사용 기준). 지나면 자동 삭제(0=끄기)
     OMR_HOST / OMR_PORT  바인딩 (기본 0.0.0.0:5050)
 """
 from __future__ import annotations
@@ -213,11 +213,29 @@ def _no_cache_html(resp):
     return resp
 
 
+_RUN_ID_IN_PATH = re.compile(r"/([0-9a-f]{8,32})(?:/|$)")
+
+
+def _touch_run(path: str) -> None:
+    """요청 경로에 run_id 가 있으면 결과 폴더 mtime 갱신 — TTL 정리가 '생성 후'가
+    아니라 '마지막 사용 후' 기준이 되게 한다(검토 도중 카드 이미지가 사라지던 문제)."""
+    m = _RUN_ID_IN_PATH.search(path)
+    if not m:
+        return
+    d = WEB_OUTPUT_ROOT / m.group(1)
+    try:
+        if d.is_dir():
+            os.utime(d, None)
+    except OSError:
+        pass
+
+
 @app.before_request
 def _gate():
     """오픈 액세스면 무인증. 아니면 PC(localhost) 무인증 / 원격은 접속 코드."""
     if OPEN_ACCESS or _is_local(request) or session.get("auth") \
             or request.endpoint in ("login", "static"):
+        _touch_run(request.path)
         return None
     return redirect(url_for("login", next=request.path))
 
@@ -248,7 +266,7 @@ def login():
     return render_template("login.html", error=error)
 
 
-# ── 데이터 보존: TTL 지난 업로드·결과 폴더 자동 삭제 (개인정보 최소화) ──
+# ── 데이터 보존: 마지막 사용(요청) 후 TTL 지난 업로드·결과 폴더 자동 삭제 (개인정보 최소화) ──
 def _sweep_old_data() -> None:
     if DATA_TTL_MIN <= 0:
         return
