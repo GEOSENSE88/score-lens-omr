@@ -38,6 +38,7 @@ from flask import (Flask, abort, jsonify, redirect, render_template, request,
 from werkzeug.utils import secure_filename
 
 import consolidate as cons
+import custom_exam as ce
 import exam_registry as er
 
 
@@ -440,8 +441,17 @@ def _exam_month(exam_id: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+_CUSTOM_CARD_CATALOG = {"pg": _G3_PG, "hp": _G3_HP, "cb": _G3_CB}
+
+
 def catalog_for(grade: int, exam_id: str | None) -> list[dict]:
-    """학년+시험으로 판독 카탈로그 선택 — 고3 학평/충북모평이면 해당 카드 판독기."""
+    """학년+시험으로 판독 카탈로그 선택 — 고3 학평/충북모평이면 해당 카드 판독기.
+    사설 시험(직접 입력)은 등록 시 고른 OMR 카드 종류를 따른다."""
+    meta = ce.load_meta(exam_id, ROOT / "keys")
+    if meta and grade == 3:
+        return _CUSTOM_CARD_CATALOG.get(meta.get("card"), SUBJECTS_BY_GRADE[3])
+    if meta:
+        return SUBJECTS_BY_GRADE[grade]
     if grade == 3:
         mo = _exam_month(exam_id)
         if mo in HP_MONTHS:
@@ -657,6 +667,9 @@ def process_job(job_id: str, run_output_dir: Path, grade: int,
         card = "충북교육청 모의평가" if card0 == "cb" else \
                ("전국연합 학력평가(교육청)" if is_hp else
                 ("대수능 모의평가(평가원)" if grade == 3 else f"고{grade} 학력평가"))
+        meta = ce.load_meta(exam_id, ROOT / "keys")
+        if meta:
+            card = f"사설 「{meta.get('name', '')}」 · " + card
         append_event(job_id, f"고{grade} 답안지 {len(requested)}과목 채점을 시작합니다 "
                              f"— {card} 카드로 판독", kind="info")
 
@@ -776,6 +789,7 @@ def index():
         share = dict(url=f"http://{lan_ip()}:{port}", code=ACCESS_CODE)
     return render_template("index.html", catalog=catalog_for_ui(),
                            exams=er.list_exams(ROOT / "keys"), share=share,
+                           custom_ui=ce.layouts_for_ui(),
                            static_v=_static_version())
 
 
@@ -826,6 +840,63 @@ def api_exam_register():
     threading.Thread(target=work, daemon=True).start()
     return jsonify(ok=True, job_id=job_id,
                    status_url=url_for("api_job", run_id=job_id)), 202
+
+
+# ── 사설 모의고사: 정답·배점 직접 입력 ─────────────────────────────
+# EBSi 등록 키와 같은 파일명·스키마로 저장하므로 판독·채점 파이프라인은 그대로.
+# 사설 시험(메타 파일이 있는 ID)만 수정·삭제할 수 있다 — EBSi 키는 보호.
+_KEYS_LOCK = threading.Lock()
+
+
+@app.get("/api/exams/custom/<exam_id>")
+def api_custom_get(exam_id: str):
+    try:
+        return jsonify(ok=True, **ce.read_exam(exam_id, ROOT / "keys"))
+    except ValueError as exc:
+        return jsonify(ok=False, message=str(exc)), 404
+
+
+@app.post("/api/exams/custom")
+def api_custom_save():
+    """body: {exam_id?, year, month, grade, name, card, subject?, parts?}.
+    exam_id 가 없으면 새 사설 시험을 만든다. subject+parts 가 있으면 그 과목 키 저장."""
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        with _KEYS_LOCK:
+            eid = str(body.get("exam_id") or "").strip()
+            if eid:
+                meta = ce.update_meta(eid, ROOT / "keys", name=body.get("name"),
+                                      card=body.get("card"))
+            else:
+                meta = ce.create_exam(int(body.get("year") or 0), int(body.get("month") or 0),
+                                      int(body.get("grade") or 0), body.get("name") or "",
+                                      str(body.get("card") or ""), ROOT / "keys")
+                eid = meta["exam_id"]
+            saved = []
+            if body.get("subject"):
+                parts = body.get("parts")
+                if not isinstance(parts, list):
+                    raise ValueError("정답 형식이 올바르지 않습니다.")
+                saved = ce.save_subject(eid, str(body["subject"]), ROOT / "keys", parts)
+    except (TypeError, ValueError) as exc:
+        return jsonify(ok=False, message=str(exc)), 400
+    return jsonify(ok=True, exam_id=eid, meta=meta, saved=saved,
+                   exams=er.list_exams(ROOT / "keys"))
+
+
+@app.post("/api/exams/custom/<exam_id>/delete")
+def api_custom_delete(exam_id: str):
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        with _KEYS_LOCK:
+            if body.get("subject"):
+                n = ce.delete_subject(exam_id, str(body["subject"]), ROOT / "keys",
+                                      body.get("elective") or None)
+            else:
+                n = ce.delete_exam(exam_id, ROOT / "keys")
+    except ValueError as exc:
+        return jsonify(ok=False, message=str(exc)), 400
+    return jsonify(ok=True, deleted=n, exams=er.list_exams(ROOT / "keys"))
 
 
 def _launch_job(run_id: str, run_output_dir: Path, grade: int,

@@ -30,6 +30,16 @@ function examMonth(examId){
 function updateCardBadge(){
   const el = $("#cardBadge");
   if (!el) return;
+  const ex = EXAMS.find(e => e.exam_id === $("#exam_select").value);
+  const editBtn = $("#btnCustomEdit");
+  if (editBtn) editBtn.style.display = ex && ex.custom ? "" : "none";
+  if (ex && ex.custom){
+    const cardName = (CUSTOM_UI.cards[grade] || {})[ex.card] || ex.card;
+    el.textContent = `🗂 사설 모의고사 — ${cardName} 카드로 판독 · 정답 입력 ${ex.subjects.length}과목` +
+      (ex.subjects.length ? ` (${ex.subjects.join("·")})` : " — '정답 수정'에서 과목별로 입력하세요");
+    el.style.display = "block";
+    return;
+  }
   const mo = examMonth($("#exam_select").value);
   if (grade === 3 && mo != null){
     el.textContent = HP_MONTHS.includes(mo)
@@ -838,6 +848,357 @@ function renderSummary(){
 }
 
 $("#btnReset").addEventListener("click", () => location.reload());
+
+/* ══ 사설 모의고사: 정답·배점 직접 입력 ══
+   과목별로 1..n 정답·배점을 입력해 서버 keys/ 에 EBSi 키와 같은 형식으로 저장한다.
+   선택과목 과목(고3 국어·수학)은 공통 문항을 한 번만 입력하고 선택과목 문항만 따로. */
+const CE = {open:false, examId:null, grade:3, subj:null, el:null, expl:null, data:{}, saved:new Set()};
+
+function ceLayouts(){ return CUSTOM_UI.layouts[CE.grade] || {}; }
+function ceTabs(){
+  const L = ceLayouts();
+  const main = Object.keys(L).filter(s => !L[s].explore);
+  return CE.grade === 3 ? [...main, "탐구"] : main;
+}
+function ceExplList(){ const L = ceLayouts(); return Object.keys(L).filter(s => L[s].explore); }
+function ceSubj(){ return CE.subj === "탐구" ? CE.expl : CE.subj; }
+function ceLay(){ return ceLayouts()[ceSubj()]; }
+
+// 과목 상태: {common:{answers,points}, els:{선택과목:{answers,points}}} 또는 {answers,points}
+function ceState(subj){
+  const lay = ceLayouts()[subj];
+  if (!CE.data[subj]){
+    const blankPts = () => Object.fromEntries(Object.entries(lay.pts));
+    CE.data[subj] = lay.electives
+      ? {common:{answers:{}, points:blankPts()},
+         els:Object.fromEntries(lay.electives.map(e => [e, {answers:{}, points:blankPts()}]))}
+      : {answers:{}, points:blankPts()};
+  }
+  return CE.data[subj];
+}
+// 현재 화면 문항 q 의 저장 위치
+function ceSlot(q){
+  const lay = ceLay(), st = ceState(ceSubj());
+  if (!lay.electives) return st;
+  return lay.common.includes(q) ? st.common : st.els[CE.el];
+}
+function ceVisibleQs(){
+  const lay = ceLay(); return Array.from({length:lay.n}, (_, i) => i + 1);
+}
+
+function ensureCustomModal(){
+  let ov = $("#customModal");
+  if (ov) return ov;
+  ov = document.createElement("div");
+  ov.id = "customModal";
+  ov.innerHTML = `
+    <div class="ce-box" role="dialog" aria-label="사설 모의고사 정답 입력">
+      <div class="ce-head">
+        <span class="ce-title">사설 모의고사 · 정답·배점 직접 입력</span>
+        <button type="button" class="ce-close" title="닫기">✕</button>
+      </div>
+      <div class="ce-body">
+        <div class="ce-meta">
+          <label class="ce-f wide"><span>시험 이름</span><input type="text" id="ceName" maxlength="40" placeholder="예: ○○ 사설 모의고사 3회"></label>
+          <label class="ce-f"><span>시행 연·월</span><span class="ce-ym"><select id="ceY"></select><select id="ceM"></select></span></label>
+          <label class="ce-f"><span>OMR 카드</span><select id="ceCard"></select></label>
+          <div class="ce-f"><span>학년</span><b id="ceGrade"></b></div>
+        </div>
+        <div class="ce-cardnote">학생들이 실제로 마킹한 <b>OMR 답안지 종류</b>를 고르세요. 사설 시험지는 대부분 평가원·수능형 카드를 씁니다.</div>
+        <div class="ce-tabs" id="ceTabs"></div>
+        <div class="ce-sub" id="ceSub"></div>
+        <div class="ce-quick">
+          <label>정답 한 번에 입력 <input type="text" id="ceQuickA" placeholder="예: 41452 21312 … (객관식은 숫자를 이어서, 단답형은 띄어서)"></label>
+          <button type="button" id="ceQuickAGo">채우기</button>
+          <label>배점 한 번에 입력 <input type="text" id="ceQuickP" placeholder="예: 22322 … 또는 2 2 3 1.5"></label>
+          <button type="button" id="ceQuickPGo">채우기</button>
+        </div>
+        <div class="ce-grid" id="ceGrid"></div>
+        <div class="ce-status" id="ceStatus"></div>
+      </div>
+      <div class="ce-foot">
+        <span class="ce-total" id="ceTotal"></span>
+        <button type="button" class="ce-del-exam" id="ceDelExam">시험 삭제</button>
+        <button type="button" class="ce-del" id="ceDel">이 과목 삭제</button>
+        <button type="button" class="ce-save" id="ceSave">이 과목 저장</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => { ov.style.display = "none"; CE.open = false; };
+  ov.querySelector(".ce-close").addEventListener("click", close);
+  ov.addEventListener("mousedown", e => { if (e.target === ov) close(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && CE.open) close(); });
+  const ny = new Date().getFullYear();
+  for (let y = ny + 1; y >= ny - 2; y--) $("#ceY").appendChild(new Option(y + "년", y));
+  for (let m = 1; m <= 12; m++) $("#ceM").appendChild(new Option(m + "월", m));
+  $("#ceQuickAGo").addEventListener("click", () => ceQuick("answers"));
+  $("#ceQuickPGo").addEventListener("click", () => ceQuick("points"));
+  $("#ceQuickA").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); ceQuick("answers"); }});
+  $("#ceQuickP").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); ceQuick("points"); }});
+  $("#ceSave").addEventListener("click", ceSave);
+  $("#ceDel").addEventListener("click", ceDeleteSubject);
+  $("#ceDelExam").addEventListener("click", ceDeleteExam);
+  return ov;
+}
+
+async function openCustomEditor(examId){
+  const ov = ensureCustomModal();
+  Object.assign(CE, {open:true, examId:examId || null, grade, data:{}, saved:new Set(),
+                     subj:null, el:null, expl:null});
+  $("#ceGrade").textContent = "고" + grade;
+  const cs = $("#ceCard"); cs.innerHTML = "";
+  Object.entries(CUSTOM_UI.cards[grade]).forEach(([k, v]) => cs.appendChild(new Option(v, k)));
+  cs.disabled = grade !== 3;
+  $("#ceName").value = "";
+  $("#ceY").value = new Date().getFullYear();
+  $("#ceM").value = new Date().getMonth() + 1;
+  ceStatus("");
+  if (examId){
+    try{
+      const j = await safeJson(await fetch(`/api/exams/custom/${examId}`));
+      if (!j.ok) throw new Error(j.message);
+      $("#ceName").value = j.meta.name || "";
+      $("#ceY").value = j.meta.year; $("#ceM").value = j.meta.month; cs.value = j.meta.card;
+      Object.entries(j.subjects).forEach(([subj, byEl]) => ceLoadSubject(subj, byEl));
+    }catch(err){ ceStatus("불러오기 실패: " + err.message, true); }
+  }
+  // 연·월은 시험 ID 에 들어가므로 만든 뒤에는 바꿀 수 없다
+  $("#ceY").disabled = $("#ceM").disabled = !!examId;
+  CE.subj = ceTabs()[0];
+  CE.expl = ceExplList().find(s => CE.saved.has(s)) || ceExplList()[0] || null;
+  ceRender();
+  ov.style.display = "flex";
+  $("#ceName").focus();
+}
+
+function ceLoadSubject(subj, byEl){
+  const lay = ceLayouts()[subj];
+  if (!lay) return;
+  const st = ceState(subj);
+  const pick = (src, qs) => ({
+    answers:Object.fromEntries(qs.filter(q => src.answers[q] != null).map(q => [q, String(src.answers[q])])),
+    points:Object.fromEntries(qs.filter(q => src.points[q] != null).map(q => [q, String(src.points[q])])),
+  });
+  if (lay.electives){
+    const all = Array.from({length:lay.n}, (_, i) => i + 1);
+    const elQs = all.filter(q => !lay.common.includes(q));
+    Object.entries(byEl).forEach(([el, src]) => {
+      if (!st.els[el]) return;
+      Object.assign(st.els[el].answers, pick(src, elQs).answers);
+      Object.assign(st.els[el].points, pick(src, elQs).points);
+      Object.assign(st.common.answers, pick(src, lay.common).answers);
+      Object.assign(st.common.points, pick(src, lay.common).points);
+      CE.saved.add(subj + "|" + el);
+    });
+  } else {
+    const src = byEl[""] || Object.values(byEl)[0];
+    if (!src) return;
+    st.answers = Object.fromEntries(Object.entries(src.answers).map(([q, v]) => [q, String(v)]));
+    st.points = Object.fromEntries(Object.entries(src.points).map(([q, v]) => [q, String(v)]));
+  }
+  CE.saved.add(subj);
+}
+
+function ceRender(){
+  // 과목 탭
+  $("#ceTabs").innerHTML = ceTabs().map(t => {
+    const done = t === "탐구" ? ceExplList().some(s => CE.saved.has(s)) : CE.saved.has(t);
+    return `<button type="button" class="${t === CE.subj ? "on" : ""}" data-t="${esc(t)}">${esc(t)}${done ? " ✓" : ""}</button>`;
+  }).join("");
+  $$("#ceTabs button").forEach(b => b.addEventListener("click", () => {
+    CE.subj = b.dataset.t; CE.el = null; ceRender();
+  }));
+  // 선택과목 / 탐구 과목 선택
+  const sub = $("#ceSub");
+  if (CE.subj === "탐구"){
+    sub.innerHTML = `<label>탐구 과목 <select id="ceExpl">${ceExplList().map(s =>
+      `<option value="${esc(s)}" ${s === CE.expl ? "selected" : ""}>${esc(s)}${CE.saved.has(s) ? " ✓ 입력됨" : ""}</option>`).join("")}</select></label>
+      <span class="ce-hint">시험을 본 과목만 하나씩 골라 입력·저장하세요.</span>`;
+    $("#ceExpl").addEventListener("change", e => { CE.expl = e.target.value; ceRender(); });
+  } else {
+    const lay = ceLay();
+    if (lay.electives){
+      if (!CE.el) CE.el = lay.electives.find(e => CE.saved.has(CE.subj + "|" + e)) || lay.electives[0];
+      sub.innerHTML = `<span class="ce-hint">공통 ${lay.common[0]}~${lay.common[lay.common.length - 1]}번은 한 번만 입력 · 선택과목:</span>
+        ${lay.electives.map(e => `<button type="button" class="ce-el ${e === CE.el ? "on" : ""}" data-e="${esc(e)}">${esc(e)}${CE.saved.has(CE.subj + "|" + e) ? " ✓" : ""}</button>`).join("")}
+        <span class="ce-hint">· 입력한 선택과목만 저장됩니다</span>`;
+      $$("#ceSub .ce-el").forEach(b => b.addEventListener("click", () => { CE.el = b.dataset.e; ceRender(); }));
+    } else sub.innerHTML = "";
+  }
+  ceRenderGrid();
+}
+
+function ceRenderGrid(){
+  const lay = ceLay(), short = new Set(lay.short);
+  const grid = $("#ceGrid");
+  let html = "", lastSec = null;
+  ceVisibleQs().forEach(q => {
+    if (lay.electives){
+      const sec = lay.common.includes(q) ? "공통" : CE.el;
+      if (sec !== lastSec){ html += `<div class="ce-sec">${esc(sec)}</div>`; lastSec = sec; }
+    }
+    const slot = ceSlot(q);
+    const a = slot.answers[q] ?? "", p = slot.points[q] ?? "";
+    html += `<div class="ce-q ${short.has(q) ? "short" : ""}" data-q="${q}">
+      <span class="n">${q}</span>
+      <input class="a" inputmode="numeric" maxlength="${short.has(q) ? 3 : 1}" value="${esc(a)}"
+             placeholder="${short.has(q) ? "단답" : "답"}" aria-label="${q}번 정답">
+      <input class="p" inputmode="decimal" maxlength="4" value="${esc(p)}" aria-label="${q}번 배점">
+    </div>`;
+  });
+  grid.innerHTML = html;
+  grid.querySelectorAll(".ce-q").forEach(cell => {
+    const q = +cell.dataset.q, ia = cell.querySelector(".a"), ip = cell.querySelector(".p");
+    ia.addEventListener("input", () => {
+      ia.value = ia.value.replace(/\D/g, "");
+      if (!short.has(q)) ia.value = ia.value.replace(/[^1-5]/g, "").slice(-1);
+      ceSlot(q).answers[q] = ia.value;
+      cell.classList.toggle("bad", ia.value === "");
+      if (!short.has(q) && ia.value){         // 객관식: 한 자리 입력하면 다음 문항으로
+        const all = Array.from(grid.querySelectorAll(".ce-q .a"));
+        const next = all[all.indexOf(ia) + 1];
+        if (next) next.focus(), next.select();
+      }
+    });
+    ia.addEventListener("keydown", e => {
+      if (e.key === "Enter"){ e.preventDefault();
+        const all = Array.from(grid.querySelectorAll(".ce-q .a")); const n = all[all.indexOf(ia) + 1]; if (n) n.focus(); }
+    });
+    ip.addEventListener("input", () => {
+      ip.value = ip.value.replace(/[^\d.]/g, "");
+      ceSlot(q).points[q] = ip.value; ceUpdateTotal();
+    });
+  });
+  ceUpdateTotal();
+  $("#ceDel").style.display = CE.saved.has(ceSubj()) ? "" : "none";
+  $("#ceDelExam").style.display = CE.examId ? "" : "none";
+}
+
+function ceTotalFor(el){
+  const lay = ceLay(), st = ceState(ceSubj());
+  const src = q => lay.electives ? (lay.common.includes(q) ? st.common : st.els[el]) : st;
+  return ceVisibleQs().reduce((s, q) => s + (parseFloat(src(q).points[q]) || 0), 0);
+}
+function ceUpdateTotal(){
+  const lay = ceLay(), tot = Math.round(ceTotalFor(CE.el) * 100) / 100;
+  const el = $("#ceTotal");
+  el.textContent = `배점 합계 ${tot} / ${lay.max}점` + (lay.electives ? ` (${CE.el})` : "");
+  el.classList.toggle("warn", tot !== lay.max);
+}
+
+// "41452 6 11 38" → 객관식은 숫자 묶음을 한 자리씩, 단답형은 토큰 그대로
+function ceQuick(kind){
+  const inp = kind === "answers" ? $("#ceQuickA") : $("#ceQuickP");
+  const tokens = inp.value.trim().split(/[\s,;/]+/).filter(Boolean);
+  if (!tokens.length) return;
+  const lay = ceLay(), short = new Set(lay.short);
+  const qs = ceVisibleQs();
+  // 시작 문항: 커서가 있던 칸이 없으면 첫 빈칸부터
+  let i = 0;
+  if (kind === "answers"){ const f = qs.findIndex(q => !ceSlot(q).answers[q]); i = f < 0 ? 0 : f; }
+  for (const t of tokens){
+    if (i >= qs.length) break;
+    const spread = kind === "answers" ? !short.has(qs[i]) && /^[1-5]{2,}$/.test(t)
+                                      : /^\d{2,}$/.test(t);
+    const vals = spread ? t.split("") : [t];
+    for (const v of vals){
+      if (i >= qs.length) break;
+      const q = qs[i];
+      if (kind === "answers" && !short.has(q) && !/^[1-5]$/.test(v)){ i++; continue; }
+      ceSlot(q)[kind][q] = v; i++;
+    }
+  }
+  inp.value = "";
+  ceRenderGrid();
+}
+
+function ceStatus(msg, err){
+  const s = $("#ceStatus"); if (!s) return;
+  s.textContent = msg; s.classList.toggle("err", !!err);
+}
+
+function ceBuildParts(){
+  const lay = ceLay(), subj = ceSubj(), st = ceState(subj);
+  const all = Array.from({length:lay.n}, (_, i) => i + 1);
+  const missing = (src, qs) => qs.filter(q => !src.answers[q] || !src.points[q]);
+  if (!lay.electives){
+    const m = missing(st, all);
+    if (m.length) throw new Error(`${m.slice(0, 8).join("·")}${m.length > 8 ? "…" : ""}번 정답·배점을 입력하세요.`);
+    return [{elective:null, answers:st.answers, points:st.points}];
+  }
+  const mc = missing(st.common, lay.common);
+  if (mc.length) throw new Error(`공통 ${mc.slice(0, 8).join("·")}${mc.length > 8 ? "…" : ""}번 정답·배점을 입력하세요.`);
+  const elQs = all.filter(q => !lay.common.includes(q));
+  const parts = [];
+  for (const e of lay.electives){
+    const src = st.els[e];
+    const filled = elQs.filter(q => src.answers[q]).length;
+    if (!filled) continue;                       // 입력 안 한 선택과목은 건너뜀
+    const m = missing(src, elQs);
+    if (m.length) throw new Error(`${e} ${m.slice(0, 8).join("·")}번 정답·배점을 입력하세요.`);
+    parts.push({elective:e, answers:{...st.common.answers, ...src.answers},
+                points:{...st.common.points, ...src.points}});
+  }
+  if (!parts.length) throw new Error("선택과목 문항 정답을 하나 이상 입력하세요.");
+  return parts;
+}
+
+async function ceSave(){
+  const name = $("#ceName").value.trim();
+  if (!name){ ceStatus("시험 이름을 입력하세요.", true); $("#ceName").focus(); return; }
+  let parts;
+  try{ parts = ceBuildParts(); }catch(err){ ceStatus(err.message, true); return; }
+  const lay = ceLay();
+  const off = parts.map(p => ({e:p.elective, t:Math.round(Object.values(p.points).reduce((s, v) => s + (parseFloat(v) || 0), 0) * 100) / 100}))
+                   .filter(x => x.t !== lay.max);
+  if (off.length && !confirm(`배점 합계가 만점(${lay.max}점)과 다릅니다: ` +
+      off.map(x => `${x.e || ceSubj()} ${x.t}점`).join(", ") + "\n그대로 저장할까요?")) return;
+  const btn = $("#ceSave"); btn.disabled = true; ceStatus("저장 중…");
+  try{
+    const res = await fetch("/api/exams/custom", {method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({exam_id:CE.examId, year:+$("#ceY").value, month:+$("#ceM").value,
+                           grade:CE.grade, name, card:$("#ceCard").value,
+                           subject:ceSubj(), parts})});
+    const j = await safeJson(res);
+    if (!j.ok) throw new Error(j.message || "저장 실패");
+    CE.examId = j.exam_id;
+    $("#ceY").disabled = $("#ceM").disabled = true;
+    CE.saved.add(ceSubj());
+    parts.forEach(p => p.elective && CE.saved.add(ceSubj() + "|" + p.elective));
+    EXAMS = j.exams; renderExams(CE.examId);
+    ceStatus(`✓ ${ceSubj()}${parts[0].elective ? " (" + parts.map(p => p.elective).join("·") + ")" : ""} 정답 저장 완료 — 다른 과목도 이어서 입력하세요.`);
+    ceRender();
+  }catch(err){ ceStatus("✕ " + err.message, true); }
+  finally{ btn.disabled = false; }
+}
+
+async function ceDeleteSubject(){
+  const subj = ceSubj();
+  if (!CE.examId || !confirm(`${subj} 정답을 삭제할까요?`)) return;
+  try{
+    const j = await safeJson(await fetch(`/api/exams/custom/${CE.examId}/delete`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({subject:subj})}));
+    if (!j.ok) throw new Error(j.message);
+    [...CE.saved].filter(k => k === subj || k.startsWith(subj + "|")).forEach(k => CE.saved.delete(k));
+    delete CE.data[subj];
+    EXAMS = j.exams; renderExams(CE.examId);
+    ceStatus(`${subj} 정답을 삭제했습니다.`); ceRender();
+  }catch(err){ ceStatus("✕ " + err.message, true); }
+}
+
+async function ceDeleteExam(){
+  if (!CE.examId || !confirm(`사설 시험 「${$("#ceName").value}」과 입력한 정답을 모두 삭제할까요?`)) return;
+  try{
+    const j = await safeJson(await fetch(`/api/exams/custom/${CE.examId}/delete`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:"{}"}));
+    if (!j.ok) throw new Error(j.message);
+    EXAMS = j.exams; renderExams();
+    $("#customModal").style.display = "none"; CE.open = false;
+  }catch(err){ ceStatus("✕ " + err.message, true); }
+}
+
+$("#btnCustomNew").addEventListener("click", () => openCustomEditor(null));
+$("#btnCustomEdit").addEventListener("click", () => openCustomEditor($("#exam_select").value));
 
 renderSubjects();
 renderExams();

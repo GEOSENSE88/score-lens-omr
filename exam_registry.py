@@ -415,10 +415,22 @@ def list_exams(keys_dir: Path | None = None) -> list[dict]:
         subj = k.get("subject")
         if eid and subj:
             exams.setdefault(eid, set()).add(subj)
-    out = [dict(exam_id=eid, label=exam_label(eid),
-                grade=int(eid[-1]) if eid[-1].isdigit() else None,
-                subjects=sorted(subs))
-           for eid, subs in exams.items()]
+    # 사설 모의고사(직접 입력) — 과목 키가 아직 없어도 목록에 보인다
+    import custom_exam as ce
+    for p in keys_dir.glob(f"*{ce.META_SUFFIX}"):
+        eid = p.name[: -len(ce.META_SUFFIX)]
+        if ce.is_custom_id(eid):
+            exams.setdefault(eid, set())
+    out = []
+    for eid, subs in exams.items():
+        e = dict(exam_id=eid, label=exam_label(eid),
+                 grade=int(eid[-1]) if eid[-1].isdigit() else None,
+                 subjects=sorted(subs))
+        meta = ce.load_meta(eid, keys_dir)
+        if meta:
+            e.update(label=f"[사설] {meta.get('name', '')} ({meta.get('year')}년 {meta.get('month')}월 · 고{meta.get('grade')})",
+                     custom=True, card=meta.get("card"), name=meta.get("name", ""))
+        out.append(e)
     out.sort(key=lambda e: e["exam_id"], reverse=True)
     return out
 

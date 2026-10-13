@@ -58,11 +58,15 @@
         <div class="field">
           <label for="exam_select">시험 선택</label>
           <select id="exam_select"></select>
-          <div class="sub" id="examSub">등록된 시험 중 선택 — 없으면 아래에서 가져오기</div>
+          <div class="sub" id="examSub">등록된 시험 중 선택 — 없으면 아래에서 가져오기 · 사설 모의고사는 정답 직접 입력</div>
           <div class="exam-fetch" id="examFetch">
             <select id="fy"></select>
             <select id="fm"></select>
             <button type="button" id="btnFetch">EBSi에서 정답 가져오기</button>
+          </div>
+          <div class="custom-entry">
+            <button type="button" id="btnCustomNew">✏️ 사설 모의고사 · 정답 직접 입력</button>
+            <button type="button" id="btnCustomEdit" style="display:none">선택한 사설 시험 정답 수정</button>
           </div>
           <div class="fetch-status" id="fetchStatus"></div>
           <div class="card-badge" id="cardBadge" style="display:none"></div>
@@ -174,6 +178,7 @@
 <script>
 const CATALOG = {{ catalog|tojson }};
 let EXAMS = {{ exams|tojson }};
+const CUSTOM_UI = {{ custom_ui|tojson }};
 </script>
 <script src="{{ url_for('static', filename='app.js') }}?v={{ static_v }}"></script>
 </body>

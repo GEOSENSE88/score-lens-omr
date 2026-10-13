@@ -337,6 +337,18 @@ def consolidate(args) -> list[dict]:
     return sorted(students.values(), key=sort_key)
 
 
+_ABS_CUTS = {"영어": [90, 80, 70, 60, 50, 40, 30, 20],      # 절대평가(100점)
+             "한국사": [40, 35, 30, 25, 20, 15, 10, 5]}     # 절대평가(50점)
+
+
+def _abs_grade(subject: str, raw):
+    """영어·한국사 절대등급 — 등급컷 파일이 없는 시험(사설 모의고사 등) 보강용."""
+    cuts = _ABS_CUTS.get(subject)
+    if not cuts or not isinstance(raw, (int, float)):
+        return ""
+    return next((g for g, c in enumerate(cuts, 1) if raw >= c), 9)
+
+
 def _attach_estimates(students: list[dict], exam_id: str | None, keys_dir) -> dict:
     """EBSi 등급컷으로 과목별 예상등급/표점/백분위 부착. 반환=등급컷 dict.
 
@@ -349,6 +361,11 @@ def _attach_estimates(students: list[dict], exam_id: str | None, keys_dir) -> di
     import mimac_cuts as mimac
     has_mimac = bool(mimac.load_g3_cuts(exam_id, keys_dir))
     if not cuts and not has_mimac:
+        for s in students:
+            for subject in _ABS_CUTS:
+                d = s.get(subject)
+                if d and d.get("예상등급") in ("", None):
+                    d["예상등급"] = _abs_grade(subject, d.get("원점수"))
         return {}
     for s in students:
         for subject in ("국어", "수학", "영어", "한국사"):
@@ -429,6 +446,8 @@ def regrade_student_subject(s: dict, subject: str, exam_id, keys_dir):
         mg = mimac.mimac_g3_grade(exam_id, subject, d.get("선택", ""), d.get("원점수"), keys_dir)
         if mg != "":
             등급 = mg
+    if 등급 in ("", None) and not cuts:
+        등급 = _abs_grade(subject, d.get("원점수"))
     d.update(예상등급=등급, 예상표준점수=표점, 예상백분위=백분위)
 
 
